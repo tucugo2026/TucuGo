@@ -209,11 +209,81 @@ export default function App() {
     }
   }
 
+  function ordenarPorFechaDesc(lista) {
+    return [...lista].sort((a, b) => {
+      const fechaA = a.fecha?.seconds ? a.fecha.seconds : 0;
+      const fechaB = b.fecha?.seconds ? b.fecha.seconds : 0;
+      return fechaB - fechaA;
+    });
+  }
+
   const pendientes = conductores.filter((c) => c.estado === "pendiente");
   const aprobados = conductores.filter((c) => c.estado === "aprobado");
   const rechazados = conductores.filter((c) => c.estado === "rechazado");
-
   const conductoresAprobados = conductores.filter((c) => c.estado === "aprobado");
+
+  const viajesSolicitados = ordenarPorFechaDesc(
+    viajes.filter((v) => v.estado === "solicitado")
+  );
+  const viajesEnCurso = ordenarPorFechaDesc(
+    viajes.filter((v) => v.estado === "aceptado" || v.estado === "en_viaje")
+  );
+  const viajesFinalizados = ordenarPorFechaDesc(
+    viajes.filter((v) => v.estado === "finalizado")
+  );
+  const viajesCancelados = ordenarPorFechaDesc(
+    viajes.filter((v) => v.estado === "cancelado")
+  );
+
+  function renderViaje(v) {
+    return (
+      <div key={v.id} style={cardStyle}>
+        <strong>{v.origen} → {v.destino}</strong><br />
+        Pasajero: {v.pasajero}<br />
+        Conductor: {v.conductor}<br />
+        Servicio: {obtenerServicioLabel(v.tipoServicio)}<br />
+        Estado: {v.estado}<br />
+        Pago: {v.metodoPago}<br />
+        Precio: ${Number(v.precio || 0).toLocaleString("es-AR")}
+        {v.hora ? (
+          <>
+            <br />
+            Hora: {v.hora}
+          </>
+        ) : null}
+
+        <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          {v.estado === "solicitado" && (
+            <>
+              <button onClick={() => cambiarEstadoViaje(v.id, "aceptado")} style={approveBtn}>
+                Aceptar
+              </button>
+              <button onClick={() => cambiarEstadoViaje(v.id, "cancelado")} style={rejectBtn}>
+                Cancelar
+              </button>
+            </>
+          )}
+
+          {v.estado === "aceptado" && (
+            <>
+              <button onClick={() => cambiarEstadoViaje(v.id, "en_viaje")} style={startBtn}>
+                Iniciar viaje
+              </button>
+              <button onClick={() => cambiarEstadoViaje(v.id, "cancelado")} style={rejectBtn}>
+                Cancelar
+              </button>
+            </>
+          )}
+
+          {v.estado === "en_viaje" && (
+            <button onClick={() => cambiarEstadoViaje(v.id, "finalizado")} style={finishBtn}>
+              Finalizar
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: "Arial, sans-serif", padding: "24px", maxWidth: "1100px", margin: "0 auto" }}>
@@ -404,52 +474,32 @@ export default function App() {
         ))
       )}
 
-      <h2>Viajes</h2>
-      {viajes.length === 0 ? (
-        <p>No hay viajes cargados.</p>
+      <h2 style={sectionTitleYellow}>🟡 Viajes solicitados</h2>
+      {viajesSolicitados.length === 0 ? (
+        <p>No hay viajes solicitados.</p>
       ) : (
-        viajes.map((v) => (
-          <div key={v.id} style={cardStyle}>
-            <strong>{v.origen} → {v.destino}</strong><br />
-            Pasajero: {v.pasajero}<br />
-            Conductor: {v.conductor}<br />
-            Servicio: {obtenerServicioLabel(v.tipoServicio)}<br />
-            Estado: {v.estado}<br />
-            Pago: {v.metodoPago}<br />
-            Precio: ${Number(v.precio || 0).toLocaleString("es-AR")}
-            {v.hora ? (
-              <>
-                <br />
-                Hora: {v.hora}
-              </>
-            ) : null}
+        viajesSolicitados.map(renderViaje)
+      )}
 
-            <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {v.estado === "solicitado" && (
-                <>
-                  <button onClick={() => cambiarEstadoViaje(v.id, "aceptado")} style={approveBtn}>
-                    Aceptar
-                  </button>
-                  <button onClick={() => cambiarEstadoViaje(v.id, "cancelado")} style={rejectBtn}>
-                    Cancelar
-                  </button>
-                </>
-              )}
+      <h2 style={sectionTitleBlue}>🔵 Viajes en curso</h2>
+      {viajesEnCurso.length === 0 ? (
+        <p>No hay viajes en curso.</p>
+      ) : (
+        viajesEnCurso.map(renderViaje)
+      )}
 
-              {v.estado === "aceptado" && (
-                <button onClick={() => cambiarEstadoViaje(v.id, "en_viaje")} style={startBtn}>
-                  Iniciar viaje
-                </button>
-              )}
+      <h2 style={sectionTitleGreen}>🟢 Viajes finalizados</h2>
+      {viajesFinalizados.length === 0 ? (
+        <p>No hay viajes finalizados.</p>
+      ) : (
+        viajesFinalizados.map(renderViaje)
+      )}
 
-              {v.estado === "en_viaje" && (
-                <button onClick={() => cambiarEstadoViaje(v.id, "finalizado")} style={finishBtn}>
-                  Finalizar
-                </button>
-              )}
-            </div>
-          </div>
-        ))
+      <h2 style={sectionTitleRed}>🔴 Viajes cancelados</h2>
+      {viajesCancelados.length === 0 ? (
+        <p>No hay viajes cancelados.</p>
+      ) : (
+        viajesCancelados.map(renderViaje)
       )}
     </div>
   );
@@ -541,4 +591,28 @@ const finishBtn = {
   padding: "10px 14px",
   borderRadius: "8px",
   cursor: "pointer"
+};
+
+const sectionTitleYellow = {
+  background: "#fef3c7",
+  padding: "10px 14px",
+  borderRadius: "10px"
+};
+
+const sectionTitleBlue = {
+  background: "#dbeafe",
+  padding: "10px 14px",
+  borderRadius: "10px"
+};
+
+const sectionTitleGreen = {
+  background: "#dcfce7",
+  padding: "10px 14px",
+  borderRadius: "10px"
+};
+
+const sectionTitleRed = {
+  background: "#fee2e2",
+  padding: "10px 14px",
+  borderRadius: "10px"
 };
