@@ -8,14 +8,6 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
-function formatearServicio(tipo) {
-  const valor = String(tipo || "auto").toLowerCase();
-
-  if (valor === "moto") return "🏍 Moto";
-  if (valor === "mensajeria") return "📦 Mensajería";
-  return "🚗 Auto";
-}
-
 export default function App() {
   const [conductores, setConductores] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -60,6 +52,23 @@ export default function App() {
       console.error("Error actualizando conductor:", error);
       alert("No se pudo actualizar el conductor");
     }
+  }
+
+  async function cambiarEstadoViaje(id, nuevoEstado) {
+    try {
+      const ref = doc(db, "viajes", id);
+      await updateDoc(ref, { estado: nuevoEstado });
+      await cargarDatos();
+    } catch (error) {
+      console.error("Error actualizando viaje:", error);
+      alert("No se pudo actualizar el estado del viaje");
+    }
+  }
+
+  function obtenerServicioLabel(tipoServicio) {
+    if (tipoServicio === "moto") return "🏍 Moto";
+    if (tipoServicio === "mensajeria") return "📦 Mensajería";
+    return "🚗 Auto";
   }
 
   function handleChange(e) {
@@ -263,10 +272,35 @@ export default function App() {
             <strong>{v.origen} → {v.destino}</strong><br />
             Pasajero: {v.pasajero}<br />
             Conductor: {v.conductor}<br />
-            Servicio: {formatearServicio(v.tipoServicio)}<br />
+            Servicio: {obtenerServicioLabel(v.tipoServicio)}<br />
             Estado: {v.estado}<br />
             Pago: {v.metodoPago}<br />
-            Precio: ${v.precio}
+            Precio: ${Number(v.precio || 0).toLocaleString("es-AR")}
+
+            <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {v.estado === "solicitado" && (
+                <>
+                  <button onClick={() => cambiarEstadoViaje(v.id, "aceptado")} style={approveBtn}>
+                    Aceptar
+                  </button>
+                  <button onClick={() => cambiarEstadoViaje(v.id, "cancelado")} style={rejectBtn}>
+                    Cancelar
+                  </button>
+                </>
+              )}
+
+              {v.estado === "aceptado" && (
+                <button onClick={() => cambiarEstadoViaje(v.id, "en_viaje")} style={startBtn}>
+                  Iniciar viaje
+                </button>
+              )}
+
+              {v.estado === "en_viaje" && (
+                <button onClick={() => cambiarEstadoViaje(v.id, "finalizado")} style={finishBtn}>
+                  Finalizar
+                </button>
+              )}
+            </div>
           </div>
         ))
       )}
@@ -329,6 +363,24 @@ const approveBtn = {
 
 const rejectBtn = {
   background: "#dc2626",
+  color: "#fff",
+  border: "none",
+  padding: "10px 14px",
+  borderRadius: "8px",
+  cursor: "pointer"
+};
+
+const startBtn = {
+  background: "#f59e0b",
+  color: "#fff",
+  border: "none",
+  padding: "10px 14px",
+  borderRadius: "8px",
+  cursor: "pointer"
+};
+
+const finishBtn = {
+  background: "#2563eb",
   color: "#fff",
   border: "none",
   padding: "10px 14px",
