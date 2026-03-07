@@ -223,10 +223,11 @@ export default function App() {
     return v.tipoServicio === filtroServicio;
   }
 
-  const pendientes = conductores.filter((c) => c.estado === "pendiente");
-  const aprobados = conductores.filter((c) => c.estado === "aprobado");
-  const rechazados = conductores.filter((c) => c.estado === "rechazado");
-  const conductoresAprobados = conductores.filter((c) => c.estado === "aprobado");
+  const conductoresDisponibles = conductores.filter((c) => c.estado === "aprobado");
+  const conductoresPendientes = conductores.filter((c) => c.estado === "pendiente");
+  const conductoresRechazados = conductores.filter((c) => c.estado === "rechazado");
+
+  const conductoresAprobados = conductoresDisponibles;
 
   const viajesSolicitados = ordenarPorFechaDesc(
     viajes.filter((v) => v.estado === "solicitado" && pasaFiltroServicio(v))
@@ -287,6 +288,18 @@ export default function App() {
             </button>
           )}
         </div>
+      </div>
+    );
+  }
+
+  function renderConductor(c, tipo) {
+    return (
+      <div key={c.id} style={cardStyle}>
+        <strong>{c.nombre}</strong><br />
+        Teléfono: {c.telefono}<br />
+        Vehículo: {c.vehiculo}<br />
+        Patente: {c.patente}<br />
+        Estado: {tipo}
       </div>
     );
   }
@@ -402,17 +415,24 @@ export default function App() {
         </button>
       </form>
 
-      <h2>Conductores pendientes</h2>
-      {pendientes.length === 0 ? (
+      <h2 style={sectionTitleAvailable}>🟢 Conductores disponibles</h2>
+      {conductoresDisponibles.length === 0 ? (
+        <p>No hay conductores disponibles.</p>
+      ) : (
+        conductoresDisponibles.map((c) => renderConductor(c, "Disponible"))
+      )}
+
+      <h2 style={sectionTitlePending}>🟡 Conductores pendientes</h2>
+      {conductoresPendientes.length === 0 ? (
         <p>No hay conductores pendientes.</p>
       ) : (
-        pendientes.map((c) => (
+        conductoresPendientes.map((c) => (
           <div key={c.id} style={cardStyle}>
             <strong>{c.nombre}</strong><br />
             Teléfono: {c.telefono}<br />
-            Estado: {c.estado}<br />
             Vehículo: {c.vehiculo}<br />
-            Patente: {c.patente}<br /><br />
+            Patente: {c.patente}<br />
+            Estado: Pendiente<br /><br />
 
             <button onClick={() => cambiarEstadoConductor(c.id, "aprobado")} style={approveBtn}>
               Aprobar
@@ -425,34 +445,11 @@ export default function App() {
         ))
       )}
 
-      <h2>Conductores aprobados</h2>
-      {aprobados.length === 0 ? (
-        <p>No hay conductores aprobados.</p>
-      ) : (
-        aprobados.map((c) => (
-          <div key={c.id} style={cardStyle}>
-            <strong>{c.nombre}</strong><br />
-            Teléfono: {c.telefono}<br />
-            Estado: {c.estado}<br />
-            Vehículo: {c.vehiculo}<br />
-            Patente: {c.patente}
-          </div>
-        ))
-      )}
-
-      <h2>Conductores rechazados</h2>
-      {rechazados.length === 0 ? (
+      <h2 style={sectionTitleRejected}>🔴 Conductores rechazados</h2>
+      {conductoresRechazados.length === 0 ? (
         <p>No hay conductores rechazados.</p>
       ) : (
-        rechazados.map((c) => (
-          <div key={c.id} style={cardStyle}>
-            <strong>{c.nombre}</strong><br />
-            Teléfono: {c.telefono}<br />
-            Estado: {c.estado}<br />
-            Vehículo: {c.vehiculo}<br />
-            Patente: {c.patente}
-          </div>
-        ))
+        conductoresRechazados.map((c) => renderConductor(c, "Rechazado"))
       )}
 
       <h2>Usuarios</h2>
@@ -484,6 +481,7 @@ export default function App() {
         <span style={{ fontWeight: "bold" }}>Mostrar:</span>
 
         <button
+          type="button"
           style={filtroServicio === "todos" ? activeFilterBtn : filterBtn}
           onClick={() => setFiltroServicio("todos")}
         >
@@ -491,6 +489,7 @@ export default function App() {
         </button>
 
         <button
+          type="button"
           style={filtroServicio === "auto" ? activeFilterBtn : filterBtn}
           onClick={() => setFiltroServicio("auto")}
         >
@@ -498,6 +497,7 @@ export default function App() {
         </button>
 
         <button
+          type="button"
           style={filtroServicio === "moto" ? activeFilterBtn : filterBtn}
           onClick={() => setFiltroServicio("moto")}
         >
@@ -505,6 +505,7 @@ export default function App() {
         </button>
 
         <button
+          type="button"
           style={filtroServicio === "mensajeria" ? activeFilterBtn : filterBtn}
           onClick={() => setFiltroServicio("mensajeria")}
         >
@@ -677,6 +678,24 @@ const sectionTitleGreen = {
 };
 
 const sectionTitleRed = {
+  background: "#fee2e2",
+  padding: "10px 14px",
+  borderRadius: "10px"
+};
+
+const sectionTitleAvailable = {
+  background: "#dcfce7",
+  padding: "10px 14px",
+  borderRadius: "10px"
+};
+
+const sectionTitlePending = {
+  background: "#fef3c7",
+  padding: "10px 14px",
+  borderRadius: "10px"
+};
+
+const sectionTitleRejected = {
   background: "#fee2e2",
   padding: "10px 14px",
   borderRadius: "10px"
