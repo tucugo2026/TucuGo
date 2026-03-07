@@ -65,10 +65,29 @@ export default function App() {
     }
   }
 
-  async function cambiarEstadoViaje(id, nuevoEstado) {
+  async function actualizarEstadoConductorPorNombre(nombreConductor, nuevoEstado) {
+    if (!nombreConductor || nombreConductor === "Sin asignar") return;
+
+    const conductorEncontrado = conductores.find((c) => c.nombre === nombreConductor);
+    if (!conductorEncontrado) return;
+
+    const ref = doc(db, "conductores", conductorEncontrado.id);
+    await updateDoc(ref, { estado: nuevoEstado });
+  }
+
+  async function cambiarEstadoViaje(viaje, nuevoEstado) {
     try {
-      const ref = doc(db, "viajes", id);
+      const ref = doc(db, "viajes", viaje.id);
       await updateDoc(ref, { estado: nuevoEstado });
+
+      if (nuevoEstado === "aceptado" || nuevoEstado === "en_viaje") {
+        await actualizarEstadoConductorPorNombre(viaje.conductor, "ocupado");
+      }
+
+      if (nuevoEstado === "finalizado" || nuevoEstado === "cancelado") {
+        await actualizarEstadoConductorPorNombre(viaje.conductor, "aprobado");
+      }
+
       await cargarDatos();
     } catch (error) {
       console.error("Error actualizando viaje:", error);
@@ -224,6 +243,7 @@ export default function App() {
   }
 
   const conductoresDisponibles = conductores.filter((c) => c.estado === "aprobado");
+  const conductoresOcupados = conductores.filter((c) => c.estado === "ocupado");
   const conductoresPendientes = conductores.filter((c) => c.estado === "pendiente");
   const conductoresRechazados = conductores.filter((c) => c.estado === "rechazado");
 
@@ -262,10 +282,10 @@ export default function App() {
         <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
           {v.estado === "solicitado" && (
             <>
-              <button onClick={() => cambiarEstadoViaje(v.id, "aceptado")} style={approveBtn}>
+              <button onClick={() => cambiarEstadoViaje(v, "aceptado")} style={approveBtn}>
                 Aceptar
               </button>
-              <button onClick={() => cambiarEstadoViaje(v.id, "cancelado")} style={rejectBtn}>
+              <button onClick={() => cambiarEstadoViaje(v, "cancelado")} style={rejectBtn}>
                 Cancelar
               </button>
             </>
@@ -273,17 +293,17 @@ export default function App() {
 
           {v.estado === "aceptado" && (
             <>
-              <button onClick={() => cambiarEstadoViaje(v.id, "en_viaje")} style={startBtn}>
+              <button onClick={() => cambiarEstadoViaje(v, "en_viaje")} style={startBtn}>
                 Iniciar viaje
               </button>
-              <button onClick={() => cambiarEstadoViaje(v.id, "cancelado")} style={rejectBtn}>
+              <button onClick={() => cambiarEstadoViaje(v, "cancelado")} style={rejectBtn}>
                 Cancelar
               </button>
             </>
           )}
 
           {v.estado === "en_viaje" && (
-            <button onClick={() => cambiarEstadoViaje(v.id, "finalizado")} style={finishBtn}>
+            <button onClick={() => cambiarEstadoViaje(v, "finalizado")} style={finishBtn}>
               Finalizar
             </button>
           )}
@@ -420,6 +440,13 @@ export default function App() {
         <p>No hay conductores disponibles.</p>
       ) : (
         conductoresDisponibles.map((c) => renderConductor(c, "Disponible"))
+      )}
+
+      <h2 style={sectionTitleBusy}>🔵 Conductores ocupados</h2>
+      {conductoresOcupados.length === 0 ? (
+        <p>No hay conductores ocupados.</p>
+      ) : (
+        conductoresOcupados.map((c) => renderConductor(c, "Ocupado"))
       )}
 
       <h2 style={sectionTitlePending}>🟡 Conductores pendientes</h2>
@@ -685,6 +712,12 @@ const sectionTitleRed = {
 
 const sectionTitleAvailable = {
   background: "#dcfce7",
+  padding: "10px 14px",
+  borderRadius: "10px"
+};
+
+const sectionTitleBusy = {
+  background: "#dbeafe",
   padding: "10px 14px",
   borderRadius: "10px"
 };
