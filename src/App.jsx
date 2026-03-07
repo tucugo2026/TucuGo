@@ -4,7 +4,8 @@ import {
   getDocs,
   doc,
   updateDoc,
-  addDoc
+  addDoc,
+  Timestamp
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -25,6 +26,15 @@ export default function App() {
     modelo: "",
     color: "",
     anio: ""
+  });
+
+  const [viajeForm, setViajeForm] = useState({
+    pasajero: "",
+    origen: "",
+    destino: "",
+    tipoServicio: "auto",
+    metodoPago: "Efectivo",
+    conductor: "Sin asignar"
   });
 
   async function cargarDatos() {
@@ -71,9 +81,23 @@ export default function App() {
     return "🚗 Auto";
   }
 
+  function obtenerPrecioServicio(tipoServicio) {
+    if (tipoServicio === "moto") return 900;
+    if (tipoServicio === "mensajeria") return 1200;
+    return 1500;
+  }
+
   function handleChange(e) {
     const { name, value } = e.target;
     setForm((prev) => ({
+      ...prev,
+      [name]: value
+    }));
+  }
+
+  function handleViajeChange(e) {
+    const { name, value } = e.target;
+    setViajeForm((prev) => ({
       ...prev,
       [name]: value
     }));
@@ -139,9 +163,57 @@ export default function App() {
     }
   }
 
+  async function crearViajeRapido(e) {
+    e.preventDefault();
+
+    if (!viajeForm.pasajero || !viajeForm.origen || !viajeForm.destino) {
+      alert("Completá pasajero, origen y destino.");
+      return;
+    }
+
+    const precio = obtenerPrecioServicio(viajeForm.tipoServicio);
+    const ahora = new Date();
+
+    try {
+      await addDoc(collection(db, "viajes"), {
+        pasajero: viajeForm.pasajero,
+        origen: viajeForm.origen,
+        destino: viajeForm.destino,
+        conductor: viajeForm.conductor || "Sin asignar",
+        metodoPago: viajeForm.metodoPago,
+        tipoServicio: viajeForm.tipoServicio,
+        precio,
+        estado: "solicitado",
+        hora: ahora.toLocaleTimeString("es-AR", {
+          hour: "2-digit",
+          minute: "2-digit"
+        }),
+        fecha: Timestamp.fromDate(ahora)
+      });
+
+      alert("Viaje creado correctamente");
+
+      setViajeForm({
+        pasajero: "",
+        origen: "",
+        destino: "",
+        tipoServicio: "auto",
+        metodoPago: "Efectivo",
+        conductor: "Sin asignar"
+      });
+
+      await cargarDatos();
+    } catch (error) {
+      console.error("Error creando viaje:", error);
+      alert("No se pudo crear el viaje");
+    }
+  }
+
   const pendientes = conductores.filter((c) => c.estado === "pendiente");
   const aprobados = conductores.filter((c) => c.estado === "aprobado");
   const rechazados = conductores.filter((c) => c.estado === "rechazado");
+
+  const conductoresAprobados = conductores.filter((c) => c.estado === "aprobado");
 
   return (
     <div style={{ fontFamily: "Arial, sans-serif", padding: "24px", maxWidth: "1100px", margin: "0 auto" }}>
@@ -166,6 +238,75 @@ export default function App() {
           <p>{viajes.length}</p>
         </div>
       </div>
+
+      <h2>Crear viaje rápido</h2>
+      <form onSubmit={crearViajeRapido} style={formStyle}>
+        <input
+          name="pasajero"
+          placeholder="Pasajero"
+          value={viajeForm.pasajero}
+          onChange={handleViajeChange}
+          style={inputStyle}
+        />
+        <input
+          name="origen"
+          placeholder="Origen"
+          value={viajeForm.origen}
+          onChange={handleViajeChange}
+          style={inputStyle}
+        />
+        <input
+          name="destino"
+          placeholder="Destino"
+          value={viajeForm.destino}
+          onChange={handleViajeChange}
+          style={inputStyle}
+        />
+
+        <select
+          name="tipoServicio"
+          value={viajeForm.tipoServicio}
+          onChange={handleViajeChange}
+          style={inputStyle}
+        >
+          <option value="auto">🚗 Auto</option>
+          <option value="moto">🏍 Moto</option>
+          <option value="mensajeria">📦 Mensajería</option>
+        </select>
+
+        <select
+          name="metodoPago"
+          value={viajeForm.metodoPago}
+          onChange={handleViajeChange}
+          style={inputStyle}
+        >
+          <option value="Efectivo">Efectivo</option>
+          <option value="Transferencia">Transferencia</option>
+          <option value="Tarjeta">Tarjeta</option>
+        </select>
+
+        <select
+          name="conductor"
+          value={viajeForm.conductor}
+          onChange={handleViajeChange}
+          style={inputStyle}
+        >
+          <option value="Sin asignar">Sin asignar</option>
+          {conductoresAprobados.map((c) => (
+            <option key={c.id} value={c.nombre}>
+              {c.nombre}
+            </option>
+          ))}
+        </select>
+
+        <div style={priceBoxStyle}>
+          Precio automático: <strong>${obtenerPrecioServicio(viajeForm.tipoServicio).toLocaleString("es-AR")}</strong>
+        </div>
+
+        <button type="submit" style={saveBtn}>
+          Crear viaje
+        </button>
+      </form>
 
       <h2>Registrar conductor</h2>
       <form onSubmit={registrarConductor} style={formStyle}>
@@ -276,6 +417,12 @@ export default function App() {
             Estado: {v.estado}<br />
             Pago: {v.metodoPago}<br />
             Precio: ${Number(v.precio || 0).toLocaleString("es-AR")}
+            {v.hora ? (
+              <>
+                <br />
+                Hora: {v.hora}
+              </>
+            ) : null}
 
             <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
               {v.estado === "solicitado" && (
@@ -339,6 +486,14 @@ const inputStyle = {
   padding: "10px",
   borderRadius: "8px",
   border: "1px solid #ccc"
+};
+
+const priceBoxStyle = {
+  gridColumn: "1 / -1",
+  padding: "12px",
+  borderRadius: "8px",
+  background: "#e0f2fe",
+  border: "1px solid #bae6fd"
 };
 
 const saveBtn = {
