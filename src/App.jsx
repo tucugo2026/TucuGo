@@ -14,6 +14,7 @@ export default function App() {
   const [usuarios, setUsuarios] = useState([]);
   const [viajes, setViajes] = useState([]);
   const [vehiculos, setVehiculos] = useState([]);
+  const [filtroServicio, setFiltroServicio] = useState("todos");
 
   const [form, setForm] = useState({
     nombre: "",
@@ -217,22 +218,27 @@ export default function App() {
     });
   }
 
+  function pasaFiltroServicio(v) {
+    if (filtroServicio === "todos") return true;
+    return v.tipoServicio === filtroServicio;
+  }
+
   const pendientes = conductores.filter((c) => c.estado === "pendiente");
   const aprobados = conductores.filter((c) => c.estado === "aprobado");
   const rechazados = conductores.filter((c) => c.estado === "rechazado");
   const conductoresAprobados = conductores.filter((c) => c.estado === "aprobado");
 
   const viajesSolicitados = ordenarPorFechaDesc(
-    viajes.filter((v) => v.estado === "solicitado")
+    viajes.filter((v) => v.estado === "solicitado" && pasaFiltroServicio(v))
   );
   const viajesEnCurso = ordenarPorFechaDesc(
-    viajes.filter((v) => v.estado === "aceptado" || v.estado === "en_viaje")
+    viajes.filter((v) => (v.estado === "aceptado" || v.estado === "en_viaje") && pasaFiltroServicio(v))
   );
   const viajesFinalizados = ordenarPorFechaDesc(
-    viajes.filter((v) => v.estado === "finalizado")
+    viajes.filter((v) => v.estado === "finalizado" && pasaFiltroServicio(v))
   );
   const viajesCancelados = ordenarPorFechaDesc(
-    viajes.filter((v) => v.estado === "cancelado")
+    viajes.filter((v) => v.estado === "cancelado" && pasaFiltroServicio(v))
   );
 
   function renderViaje(v) {
@@ -474,6 +480,38 @@ export default function App() {
         ))
       )}
 
+      <div style={filterBarStyle}>
+        <span style={{ fontWeight: "bold" }}>Mostrar:</span>
+
+        <button
+          style={filtroServicio === "todos" ? activeFilterBtn : filterBtn}
+          onClick={() => setFiltroServicio("todos")}
+        >
+          Todos
+        </button>
+
+        <button
+          style={filtroServicio === "auto" ? activeFilterBtn : filterBtn}
+          onClick={() => setFiltroServicio("auto")}
+        >
+          🚗 Auto
+        </button>
+
+        <button
+          style={filtroServicio === "moto" ? activeFilterBtn : filterBtn}
+          onClick={() => setFiltroServicio("moto")}
+        >
+          🏍 Moto
+        </button>
+
+        <button
+          style={filtroServicio === "mensajeria" ? activeFilterBtn : filterBtn}
+          onClick={() => setFiltroServicio("mensajeria")}
+        >
+          📦 Mensajería
+        </button>
+      </div>
+
       <h2 style={sectionTitleYellow}>🟡 Viajes solicitados</h2>
       {viajesSolicitados.length === 0 ? (
         <p>No hay viajes solicitados.</p>
@@ -544,6 +582,33 @@ const priceBoxStyle = {
   borderRadius: "8px",
   background: "#e0f2fe",
   border: "1px solid #bae6fd"
+};
+
+const filterBarStyle = {
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap",
+  alignItems: "center",
+  marginTop: "24px",
+  marginBottom: "16px"
+};
+
+const filterBtn = {
+  background: "#f3f4f6",
+  color: "#111827",
+  border: "1px solid #d1d5db",
+  padding: "10px 14px",
+  borderRadius: "8px",
+  cursor: "pointer"
+};
+
+const activeFilterBtn = {
+  background: "#2563eb",
+  color: "#fff",
+  border: "1px solid #2563eb",
+  padding: "10px 14px",
+  borderRadius: "8px",
+  cursor: "pointer"
 };
 
 const saveBtn = {
