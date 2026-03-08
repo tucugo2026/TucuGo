@@ -1,5 +1,23 @@
-import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
+import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
+
+function AutoCenter({ passenger, driver }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (driver?.ubicacion?.lat != null && driver?.ubicacion?.lng != null) {
+      map.setView([driver.ubicacion.lat, driver.ubicacion.lng], 14, { animate: true });
+      return;
+    }
+
+    if (passenger?.lat != null && passenger?.lng != null) {
+      map.setView([passenger.lat, passenger.lng], 14, { animate: true });
+    }
+  }, [map, passenger, driver]);
+
+  return null;
+}
 
 export default function PassengerLiveMap({ passenger, driver, destination }) {
   const center = passenger || { lat: -26.8241, lng: -65.2226 };
@@ -24,6 +42,8 @@ export default function PassengerLiveMap({ passenger, driver, destination }) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
+      <AutoCenter passenger={passenger} driver={driver} />
+
       {passengerPosition && (
         <Marker position={passengerPosition}>
           <Popup>Tu ubicación</Popup>
@@ -46,6 +66,13 @@ export default function PassengerLiveMap({ passenger, driver, destination }) {
         <Polyline
           positions={[driverPosition, passengerPosition]}
           pathOptions={{ color: 'blue' }}
+        />
+      )}
+
+      {passengerPosition && destinationPosition && (
+        <Polyline
+          positions={[passengerPosition, destinationPosition]}
+          pathOptions={{ color: 'green' }}
         />
       )}
     </MapContainer>

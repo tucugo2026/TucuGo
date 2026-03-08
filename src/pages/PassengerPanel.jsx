@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import PassengerLiveMap from '../components/PassengerLiveMap.jsx';
 import { SUPPORTED_PAYMENT_METHODS } from '../config/appConfig.js';
 import {
@@ -24,6 +24,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
   const [position, setPosition] = useState(null);
   const [destinationOffsetKm, setDestinationOffsetKm] = useState(6);
   const [message, setMessage] = useState('');
+  const [myLatestTrip, setMyLatestTrip] = useState(null);
 
   const city = useMemo(
     () => cities.find((item) => item.id === selectedCity) ?? cities[0],
@@ -38,6 +39,32 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
     loadPosition();
   }, [city]);
+
+  useEffect(() => {
+    if (!passengerPhone) return;
+
+    const q = query(
+      collection(db, 'viajes'),
+      where('passengerPhone', '==', passengerPhone)
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const rows = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data()
+      }));
+
+      rows.sort((a, b) => {
+        const aDate = a.createdAt || '';
+        const bDate = b.createdAt || '';
+        return String(bDate).localeCompare(String(aDate));
+      });
+
+      setMyLatestTrip(rows[0] || null);
+    });
+
+    return () => unsubscribe();
+  }, [passengerPhone]);
 
   const destinationPoint = useMemo(() => {
     if (!position) return null;
@@ -111,24 +138,56 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
   }, [compatibleDrivers, selectedCity, position]);
 
   const assignedDriver = useMemo(() => {
-    if (!nearestDriver) return null;
-
-    const tripDriverId =
+    const driverId =
+      myLatestTrip?.conductorId ||
+      myLatestTrip?.driverId ||
       nearestDriver?.id ||
       nearestDriver?.uid ||
       nearestDriver?.driverId;
 
-    if (!tripDriverId) return nearestDriver;
+    if (!driverId) return null;
 
     return (
       drivers.find(
         (d) =>
-          d.id === tripDriverId ||
-          d.uid === tripDriverId ||
-          d.driverId === tripDriverId
-      ) || nearestDriver
+          d.id === driverId ||
+          d.uid === driverId ||
+          d.driverId === driverId
+      ) || nearestDriver || null
     );
-  }, [drivers, nearestDriver]);
+  }, [drivers, nearestDriver, myLatestTrip]);
+
+  const driverDistanceKm = useMemo(() => {
+    if (!assignedDriver?.ubicacion || !position) return null;
+
+    const driverPos = {
+      lat: assignedDriver.ubicacion.lat,
+      lng: assignedDriver.ubicacion.lng
+    };
+
+    return haversineKm(driverPos, position);
+  }, [assignedDriver, position]);
+
+  const passengerTripStatusText = useMemo(() => {
+    const status = myLatestTrip?.estado || myLatestTrip?.status;
+
+    switch (status) {
+      case 'solicitado':
+        return 'Esperando conductor';
+      case 'aceptado':
+        return 'Tu conductor fue asignado';
+      case 'en_camino':
+        return 'Tu conductor está en camino';
+      case 'en_viaje':
+        return 'Tu viaje está en curso';
+      case 'finalizado':
+        return 'Tu viaje finalizó';
+      case 'cancelado':
+        return 'Tu viaje fue cancelado';
+      default:
+        return 'Aún no tienes un viaje activo';
+    }
+  }, [myLatestTrip]);
 
   async function useCurrentLocation() {
     if (!city) return;
@@ -400,32 +459,18 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
             </article>
 
             <article className="info-card">
-              <h2>Conductor más cercano</h2>
-              {nearestDriver ? (
-                <>
-                  <strong>{nearestDriver.name || nearestDriver.nombre}</strong>
-                  <p>{nearestDriver.vehicle || nearestDriver.vehiculo || '-'}</p>
-                  <p>
-                    Tipo:{' '}
-                    {(
-                      nearestDriver.vehicleType ||
-                      nearestDriver.vehiculoTipo ||
-                      nearestDriver.tipoVehiculo ||
-                      serviceType ||
-                      '-'
-                    ).toString()}
-                  </p>
-                  <p>
-                    Aprox. {nearestDriver.distanceKm.toFixed(2)} km del pasajero.
-                  </p>
-                </>
-              ) : (
-                <p>
-                  No hay conductores disponibles para{' '}
-                  <strong>{serviceType === 'auto' ? 'Auto' : 'Moto'}</strong> en
-                  esta ciudad.
-                </p>
-              )}
+              <h2>Estado de tu viaje</h2>
+              <strong>{passengerTripStatusText}</strong>
+              <p>
+                Conductor: {assignedDriver?.name || assignedDriver?.nombre || myLatestTrip?.conductorNombre || 'Sin asignar'}
+              </p>
+              <p>
+                Teléfono: {assignedDriver?.phone || assignedDriver?.telefono || myLatestTrip?.conductorTelefono || '-'}
+              </p>
+              <p>
+                Distancia del conductor:{' '}
+                {driverDistanceKm != null ? `${driverDistanceKm.toFixed(2)} km` : '—'}
+              </p>
             </article>
           </div>
         </div>
