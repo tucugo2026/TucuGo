@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where
+} from 'firebase/firestore';
 import PassengerLiveMap from '../components/PassengerLiveMap.jsx';
+import RatingStars from '../components/RatingStars.jsx';
 import { SUPPORTED_PAYMENT_METHODS } from '../config/appConfig.js';
 import {
   getBrowserPosition,
@@ -26,6 +35,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
   const [message, setMessage] = useState('');
   const [myLatestTrip, setMyLatestTrip] = useState(null);
   const [tripNotification, setTripNotification] = useState(null);
+  const [historyTrips, setHistoryTrips] = useState([]);
   const previousTripStatusRef = useRef(null);
 
   const city = useMemo(
@@ -63,6 +73,11 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
       });
 
       setMyLatestTrip(rows[0] || null);
+
+      const history = rows.filter(
+        (v) => v.estado === 'finalizado' || v.estado === 'cancelado'
+      );
+      setHistoryTrips(history);
     });
 
     return () => unsubscribe();
@@ -496,6 +511,23 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
   }
 
+  async function rateDriver(value) {
+    if (!myLatestTrip?.id) return;
+
+    try {
+      await updateDoc(doc(db, 'viajes', myLatestTrip.id), {
+        ratingDriver: value,
+        updatedAt: serverTimestamp(),
+        actualizadoEn: serverTimestamp()
+      });
+
+      alert('Gracias por calificar a tu conductor ⭐');
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo guardar la calificación.');
+    }
+  }
+
   function limpiarTelefono(phone) {
     return String(phone || '').replace(/[^\d]/g, '');
   }
@@ -548,6 +580,12 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     const status = myLatestTrip?.estado || myLatestTrip?.status || '';
     return ['solicitado', 'aceptado', 'en_camino', 'llegue'].includes(status);
   }, [myLatestTrip]);
+
+  function formatDate(date) {
+    if (!date) return '-';
+    const d = new Date(date);
+    return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+  }
 
   return (
     <div className="stack-lg">
@@ -734,9 +772,44 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
                   Cancelar viaje
                 </button>
               </div>
+
+              {myLatestTrip?.estado === 'finalizado' && !myLatestTrip?.ratingDriver ? (
+                <div style={{ marginTop: '20px' }}>
+                  <h3>Califica a tu conductor</h3>
+                  <RatingStars onRate={rateDriver} />
+                </div>
+              ) : null}
+
+              {myLatestTrip?.estado === 'finalizado' && myLatestTrip?.ratingDriver ? (
+                <div style={{ marginTop: '20px' }}>
+                  <h3>Tu calificación al conductor</h3>
+                  <RatingStars initialValue={Number(myLatestTrip.ratingDriver)} readonly={true} />
+                </div>
+              ) : null}
             </article>
           </div>
         </div>
+      </section>
+
+      <section className="stack-md">
+        <h2>Historial de viajes</h2>
+
+        {historyTrips.length === 0 ? (
+          <p>No hay viajes en el historial.</p>
+        ) : (
+          historyTrips.map((trip) => (
+            <div key={trip.id} className="info-card">
+              <p><b>Origen:</b> {trip.originText || '-'}</p>
+              <p><b>Destino:</b> {trip.destinationText || '-'}</p>
+              <p><b>Precio:</b> ${trip.price || 0}</p>
+              <p><b>Estado:</b> {trip.estado || '-'}</p>
+              <p><b>Fecha:</b> {formatDate(trip.createdAt)}</p>
+              {trip.ratingDriver ? (
+                <p><b>Tu calificación:</b> {trip.ratingDriver} ⭐</p>
+              ) : null}
+            </div>
+          ))
+        )}
       </section>
     </div>
   );
