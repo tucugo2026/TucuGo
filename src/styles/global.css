@@ -859,3 +859,36 @@ button:hover {
     align-items: flex-start;
   }
 }
+
+
+.sound-tools {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sound-toggle,
+.sound-test {
+  min-width: 180px;
+}
+
+.sound-toggle.active {
+  background: linear-gradient(135deg, #ff8a00, #ffb347);
+  color: #1b2133;
+  border-color: rgba(255, 138, 0, 0.28);
+}
+
+.sound-test {
+  background: #eef4ff;
+}
+
+@media (max-width: 760px) {
+  .sound-tools {
+    width: 100%;
+  }
+
+  .sound-toggle,
+  .sound-test {
+    width: 100%;
+  }
+}

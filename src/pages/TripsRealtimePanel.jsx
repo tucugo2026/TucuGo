@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { assignNearestDriverToTrip, setTripStatus } from '../services/tripService.js';
 import { formatMoney } from '../services/pricing.js';
 import StatusBadge from '../components/StatusBadge.jsx';
@@ -17,6 +17,52 @@ export default function TripsRealtimePanel({ trips, cities, refreshAll }) {
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('tucugo_sound_enabled') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const seenTripIdsRef = useRef(new Set());
+  const didInitRef = useRef(false);
+
+  function playNewTripSound() {
+    try {
+      const AudioContextRef = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextRef) return false;
+
+      const audio = new AudioContextRef();
+      const now = audio.currentTime;
+      const master = audio.createGain();
+      master.connect(audio.destination);
+      master.gain.setValueAtTime(0.0001, now);
+      master.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+      master.gain.exponentialRampToValueAtTime(0.0001, now + 0.85);
+
+      [880, 1174, 1568].forEach((freq, index) => {
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + index * 0.12);
+        gain.gain.setValueAtTime(0.0001, now + index * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.35, now + index * 0.12 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + index * 0.12 + 0.18);
+        osc.connect(gain);
+        gain.connect(master);
+        osc.start(now + index * 0.12);
+        osc.stop(now + index * 0.12 + 0.2);
+      });
+
+      window.setTimeout(() => {
+        audio.close().catch(() => null);
+      }, 1200);
+      return true;
+    } catch (error) {
+      console.warn('No se pudo reproducir el sonido.', error);
+      return false;
+    }
+  }
 
   const cityMap = useMemo(() => Object.fromEntries(cities.map((city) => [city.id, city])), [cities]);
 
@@ -48,6 +94,37 @@ export default function TripsRealtimePanel({ trips, cities, refreshAll }) {
     });
     return base;
   }, [filteredTrips]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('tucugo_sound_enabled', soundEnabled ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    const currentIds = new Set(trips.map((trip) => trip.id));
+
+    if (!didInitRef.current) {
+      seenTripIdsRef.current = currentIds;
+      didInitRef.current = true;
+      return;
+    }
+
+    const newRequestedTrips = trips.filter((trip) => !seenTripIdsRef.current.has(trip.id) && trip.status === 'solicitado');
+
+    if (newRequestedTrips.length && soundEnabled) {
+      const ok = playNewTripSound();
+      const amount = newRequestedTrips.length;
+      setMessage(ok
+        ? `${amount} nuevo${amount > 1 ? 's' : ''} viaje${amount > 1 ? 's' : ''} solicitado${amount > 1 ? 's' : ''}.`
+        : 'Entró un viaje nuevo, pero el navegador bloqueó el sonido hasta que toques la pantalla.');
+    }
+
+    seenTripIdsRef.current = currentIds;
+  }, [trips, soundEnabled]);
+
 
   async function runAction(tripId, action) {
     try {
@@ -143,6 +220,25 @@ export default function TripsRealtimePanel({ trips, cities, refreshAll }) {
           <option value="USDT">USDT</option>
           <option value="BTC">BTC</option>
         </select>
+        <div className="sound-tools">
+          <button
+            type="button"
+            className={`sound-toggle ${soundEnabled ? 'active' : ''}`}
+            onClick={() => setSoundEnabled((value) => !value)}
+          >
+            {soundEnabled ? '🔔 Sonido activado' : '🔕 Sonido apagado'}
+          </button>
+          <button
+            type="button"
+            className="sound-test"
+            onClick={() => {
+              const ok = playNewTripSound();
+              setMessage(ok ? 'Sonido de prueba reproducido.' : 'El navegador bloqueó el audio. Tocá primero un botón y prueba otra vez.');
+            }}
+          >
+            Probar sonido
+          </button>
+        </div>
       </section>
 
       <section className="realtime-board">
