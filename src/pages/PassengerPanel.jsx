@@ -443,6 +443,20 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
   }
 
+  function llamarAlConductor() {
+    const phone =
+      assignedDriver?.phone ||
+      assignedDriver?.telefono ||
+      myLatestTrip?.conductorTelefono;
+
+    if (!phone) {
+      alert('El conductor no tiene teléfono registrado.');
+      return;
+    }
+
+    window.location.href = `tel:${phone}`;
+  }
+
   return (
     <div className="stack-lg">
       {tripNotification ? (
@@ -610,6 +624,12 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
                 Distancia del conductor:{' '}
                 {driverDistanceKm != null ? `${driverDistanceKm.toFixed(2)} km` : '—'}
               </p>
+
+              <div style={{ marginTop: '12px' }}>
+                <button className="btn verde" onClick={llamarAlConductor}>
+                  📞 Llamar al conductor
+                </button>
+              </div>
             </article>
           </div>
         </div>
