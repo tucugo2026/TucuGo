@@ -1,99 +1,141 @@
-import { Card, Badge } from '../components/Card';
-import { formatMoney } from '../services/pricing';
+import { useMemo, useState } from 'react';
+import TableCard from '../components/TableCard.jsx';
+import { seedBaseData, assignNearestDriverToTrip, deleteTrip, setTripStatus } from '../services/tripService.js';
+import { formatMoney } from '../services/pricing.js';
 
-export default function AdminPanel({
-  data,
-  onBootstrap,
-  onReset,
-  onAutoAssign,
-  onDeleteTrip,
-  loading,
-  hasFirebaseConfig
-}) {
-  const openTrips = data.trips.filter((trip) => !['finalizado', 'cancelado'].includes(trip.estado));
-  const assigned = data.trips.filter((trip) => trip.conductorId).length;
+export default function AdminPanel({ cities, drivers, trips, refreshAll }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const cityName = useMemo(() => Object.fromEntries(cities.map((city) => [city.id, city.name])), [cities]);
+
+  async function handleSeed() {
+    try {
+      setBusy(true);
+      setMessage('Cargando base inicial...');
+      await seedBaseData();
+      await refreshAll();
+      setMessage('Base inicial cargada correctamente.');
+    } catch (error) {
+      setMessage(`Error al sembrar datos: ${error.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAssign(tripId) {
+    try {
+      setBusy(true);
+      const nearest = await assignNearestDriverToTrip(tripId);
+      setMessage(`Conductor asignado: ${nearest.name}`);
+      await refreshAll();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(tripId) {
+    try {
+      setBusy(true);
+      await deleteTrip(tripId);
+      setMessage('Viaje eliminado.');
+      await refreshAll();
+    } catch (error) {
+      setMessage(`No se pudo eliminar: ${error.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleTripStatus(tripId, status) {
+    try {
+      setBusy(true);
+      await setTripStatus(tripId, status);
+      setMessage(`Estado actualizado a ${status}.`);
+      await refreshAll();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const tripRows = trips.map((trip) => ({
+    id: trip.id,
+    passenger: trip.passengerName,
+    city: cityName[trip.city] ?? trip.city,
+    origin: trip.originText,
+    destination: trip.destinationText,
+    driver: trip.driverName || 'Sin asignar',
+    payment: trip.paymentMethod,
+    status: trip.status,
+    price: formatMoney(trip.price, trip.currency)
+  }));
+
+  const driverRows = drivers.map((driver) => ({
+    id: driver.id,
+    name: driver.name,
+    city: cityName[driver.city] ?? driver.city,
+    vehicle: driver.vehicle,
+    crypto: driver.acceptsCrypto ? 'Sí' : 'No',
+    status: driver.status
+  }));
 
   return (
-    <div className="grid two-col">
-      <Card
-        title="Panel admin"
-        subtitle="Semilla de datos, control de viajes y asignación automática"
-        actions={
-          <>
-            <button className="primary" onClick={onBootstrap} disabled={loading}>Sembrar base</button>
-            {!hasFirebaseConfig ? <button onClick={onReset}>Reiniciar demo</button> : null}
-          </>
-        }
-      >
-        <div className="stats-grid">
-          <div className="stat-box"><span>Viajes abiertos</span><strong>{openTrips.length}</strong></div>
-          <div className="stat-box"><span>Asignados</span><strong>{assigned}</strong></div>
-          <div className="stat-box"><span>Disponibles</span><strong>{data.drivers.filter((d) => d.estado === 'disponible').length}</strong></div>
-          <div className="stat-box"><span>Modo</span><strong>{hasFirebaseConfig ? 'Firebase' : 'Demo local'}</strong></div>
-        </div>
-      </Card>
+    <div className="stack-lg">
+      <section className="info-grid">
+        <article className="info-card">
+          <h2>Panel admin</h2>
+          <p>
+            Desde aquí puedes sembrar la base inicial, revisar viajes, asignar el conductor más cercano y cerrar viajes.
+          </p>
+        </article>
+        <article className="info-card">
+          <h2>Estado</h2>
+          <p>{message || 'Listo para operar.'}</p>
+          <button className="primary-button" onClick={handleSeed} disabled={busy}>
+            {busy ? 'Procesando...' : 'Sembrar base inicial'}
+          </button>
+        </article>
+      </section>
 
-      <Card title="Ciudades activas" subtitle="Tarifas configurables por ciudad">
-        <div className="list compact">
-          {data.cities.map((city) => (
-            <div key={city.id} className="list-row">
-              <div>
-                <strong>{city.nombre}</strong>
-                <p>{city.zonaHoraria}</p>
-              </div>
-              <div className="right">
-                <Badge tone="success">{city.pais}</Badge>
-                <p>{formatMoney(city.tarifaBase, city.pais === 'AR' ? 'ARS' : city.pais === 'ES' ? 'EUR' : 'USD')}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <TableCard
+        title="Viajes"
+        columns={[
+          { key: 'passenger', label: 'Pasajero' },
+          { key: 'city', label: 'Ciudad' },
+          { key: 'origin', label: 'Origen' },
+          { key: 'destination', label: 'Destino' },
+          { key: 'driver', label: 'Conductor' },
+          { key: 'payment', label: 'Pago' },
+          { key: 'price', label: 'Precio' },
+          { key: 'status', label: 'Estado', type: 'status' }
+        ]}
+        rows={tripRows}
+        actions={(row) => (
+          <div className="action-stack">
+            <button onClick={() => handleAssign(row.id)}>Asignar cercano</button>
+            <button onClick={() => handleTripStatus(row.id, 'en_camino')}>En camino</button>
+            <button onClick={() => handleTripStatus(row.id, 'en_viaje')}>En viaje</button>
+            <button onClick={() => handleTripStatus(row.id, 'finalizado')}>Finalizar</button>
+            <button className="danger-button" onClick={() => handleDelete(row.id)}>Eliminar</button>
+          </div>
+        )}
+      />
 
-      <Card title="Viajes" subtitle="Puedes asignar automáticamente el conductor más cercano">
-        <div className="list">
-          {data.trips.length === 0 ? <p>No hay viajes todavía.</p> : data.trips.map((trip) => (
-            <div key={trip.id} className="trip-card">
-              <div className="trip-top">
-                <div>
-                  <strong>{trip.origen.texto} → {trip.destino.texto}</strong>
-                  <p>Pasajero: {trip.pasajeroNombre}</p>
-                  <p>Conductor: {trip.conductorNombre || 'Sin asignar'}</p>
-                </div>
-                <Badge tone={trip.estado === 'finalizado' ? 'success' : trip.conductorId ? 'info' : 'warning'}>{trip.estado}</Badge>
-              </div>
-              <div className="trip-meta">
-                <span>{trip.servicio}</span>
-                <span>{trip.pagoMetodo}{trip.cryptoMoneda ? ` · ${trip.cryptoMoneda}` : ''}</span>
-                <span>{formatMoney(trip.precio, trip.moneda)}</span>
-              </div>
-              <div className="actions wrap">
-                {!trip.conductorId && trip.estado === 'solicitado' ? (
-                  <button className="primary" onClick={() => onAutoAssign(trip.id)}>Asignar cercano</button>
-                ) : null}
-                <button className="danger" onClick={() => onDeleteTrip(trip.id)}>Eliminar</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card title="Conductores" subtitle="Estado global de la flota">
-        <div className="list compact">
-          {data.drivers.map((driver) => (
-            <div key={driver.id} className="list-row">
-              <div>
-                <strong>{driver.nombre}</strong>
-                <p>{driver.vehiculo?.marca} {driver.vehiculo?.modelo} · {driver.vehiculo?.patente}</p>
-              </div>
-              <div className="right">
-                <Badge tone={driver.estado === 'disponible' ? 'success' : driver.estado === 'offline' ? 'default' : 'warning'}>{driver.estado}</Badge>
-                <p>{driver.ciudad}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <TableCard
+        title="Conductores"
+        columns={[
+          { key: 'name', label: 'Nombre' },
+          { key: 'city', label: 'Ciudad' },
+          { key: 'vehicle', label: 'Vehículo' },
+          { key: 'crypto', label: 'Cripto' },
+          { key: 'status', label: 'Estado', type: 'status' }
+        ]}
+        rows={driverRows}
+      />
     </div>
   );
 }

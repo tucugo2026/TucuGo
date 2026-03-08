@@ -1,29 +1,22 @@
-// Import Firebase
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAnalytics, isSupported } from 'firebase/analytics';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { firebaseConfig } from '../config/appConfig.js';
 
-import { getFirestore } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-import { getAuth } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
+export const db = getFirestore(app);
+export const auth = getAuth(app);
 
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-analytics.js";
+export async function initAnalytics() {
+  try {
+    const supported = await isSupported();
+    if (!supported) return null;
+    return getAnalytics(app);
+  } catch {
+    return null;
+  }
+}
 
-// Configuración de tu proyecto
-const firebaseConfig = {
-  apiKey: "AIzaSyBVu53drRzUbLSIYxdaGlxYK63JrSWIYxc",
-  authDomain: "tucugo-37d6c.firebaseapp.com",
-  projectId: "tucugo-37d6c",
-  storageBucket: "tucugo-37d6c.firebasestorage.app",
-  messagingSenderId: "156717270913",
-  appId: "1:156717270913:web:1a57d2f998d7b5983a8a80",
-  measurementId: "G-GMYQY8EEYS"
-};
-
-// Inicializar Firebase
-const app = initializeApp(firebaseConfig);
-
-// Servicios que usará TucuGo
-const db = getFirestore(app);
-const auth = getAuth(app);
-const analytics = getAnalytics(app);
-
-export { app, db, auth, analytics };
+export { app };

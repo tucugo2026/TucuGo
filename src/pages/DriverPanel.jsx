@@ -1,71 +1,134 @@
-import { useState } from 'react';
-import { Card, Badge } from '../components/Card';
-import { formatMoney } from '../services/pricing';
+import { useMemo, useState } from 'react';
+import MapView from '../components/MapView.jsx';
+import TableCard from '../components/TableCard.jsx';
+import { acceptTripAsDriver, setTripStatus, updateDriverLocation, updateDriverStatus } from '../services/tripService.js';
 
-export default function DriverPanel({ data, onDriverStatus, onAccept, onStart, onFinish }) {
-  const [driverId, setDriverId] = useState(data.drivers[0]?.id || '');
-  const driver = data.drivers.find((item) => item.id === driverId) || data.drivers[0];
-  const trips = data.trips.filter(
-    (trip) => !driver || trip.ciudad === driver.ciudad || trip.conductorId === driver.id
+export default function DriverPanel({ cities, drivers, trips, refreshAll }) {
+  const [selectedDriverId, setSelectedDriverId] = useState(drivers[0]?.id || '');
+  const [message, setMessage] = useState('');
+
+  const selectedDriver = useMemo(
+    () => drivers.find((item) => item.id === selectedDriverId) ?? drivers[0],
+    [drivers, selectedDriverId]
   );
 
-  return (
-    <div className="grid two-col">
-      <Card title="Panel conductor" subtitle="Aceptar, iniciar y finalizar viajes">
-        {driver ? (
-          <>
-            <label>
-              <span>Conductor</span>
-              <select value={driver.id} onChange={(e) => setDriverId(e.target.value)}>
-                {data.drivers.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
-              </select>
-            </label>
-            <div className="stats-grid top-gap">
-              <div className="stat-box"><span>Estado</span><strong>{driver.estado}</strong></div>
-              <div className="stat-box"><span>Ciudad</span><strong>{driver.ciudad}</strong></div>
-              <div className="stat-box"><span>Ganancias</span><strong>{formatMoney(driver.ganancias || 0, driver.pais === 'AR' ? 'ARS' : 'USD')}</strong></div>
-            </div>
-            <div className="actions wrap top-gap">
-              <button onClick={() => onDriverStatus(driver.id, 'disponible')}>Disponible</button>
-              <button onClick={() => onDriverStatus(driver.id, 'offline')}>Offline</button>
-            </div>
-          </>
-        ) : <p>No hay conductores.</p>}
-      </Card>
+  const city = useMemo(
+    () => cities.find((item) => item.id === selectedDriver?.city) ?? cities[0],
+    [cities, selectedDriver]
+  );
 
-      <Card title="Viajes de la zona" subtitle="Toma viajes asignados o abiertos de tu ciudad">
-        <div className="list">
-          {trips.map((trip) => {
-            const mine = trip.conductorId === driver?.id;
-            return (
-              <div key={trip.id} className="trip-card">
-                <div className="trip-top">
-                  <div>
-                    <strong>{trip.origen.texto} → {trip.destino.texto}</strong>
-                    <p>{trip.pasajeroNombre} · {trip.servicio}</p>
-                  </div>
-                  <Badge tone={mine ? 'info' : trip.estado === 'solicitado' ? 'warning' : 'default'}>{trip.estado}</Badge>
-                </div>
-                <div className="trip-meta">
-                  <span>{formatMoney(trip.precio, trip.moneda)}</span>
-                  <span>{trip.pagoMetodo}{trip.cryptoMoneda ? ` · ${trip.cryptoMoneda}` : ''}</span>
-                </div>
-                <div className="actions wrap">
-                  {!trip.conductorId && trip.estado === 'solicitado' ? (
-                    <button className="primary" onClick={() => onAccept(trip.id, driver.id)}>Aceptar</button>
-                  ) : null}
-                  {mine && trip.estado === 'aceptado' ? (
-                    <button className="primary" onClick={() => onStart(trip.id)}>Iniciar</button>
-                  ) : null}
-                  {mine && trip.estado === 'en_viaje' ? (
-                    <button className="primary" onClick={() => onFinish(trip.id)}>Finalizar</button>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+  const pendingTrips = useMemo(
+    () => trips.filter((item) => item.city === selectedDriver?.city && (item.status === 'solicitado' || item.driverId === selectedDriver?.id)),
+    [trips, selectedDriver]
+  );
+
+  async function moveDriver(deltaLat, deltaLng) {
+    if (!selectedDriver) return;
+    try {
+      await updateDriverLocation(
+        selectedDriver.id,
+        Number(selectedDriver.lat) + deltaLat,
+        Number(selectedDriver.lng) + deltaLng
+      );
+      setMessage('Ubicación del conductor actualizada.');
+      await refreshAll();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function changeStatus(status) {
+    if (!selectedDriver) return;
+    try {
+      await updateDriverStatus(selectedDriver.id, status);
+      setMessage(`Estado del conductor: ${status}`);
+      await refreshAll();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function acceptTrip(tripId) {
+    if (!selectedDriver) return;
+    try {
+      await acceptTripAsDriver(tripId, selectedDriver.id);
+      setMessage('Viaje aceptado por el conductor.');
+      await refreshAll();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function setStatusTrip(tripId, status) {
+    try {
+      await setTripStatus(tripId, status);
+      setMessage(`Viaje actualizado a ${status}.`);
+      await refreshAll();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  return (
+    <div className="stack-lg">
+      <section className="info-grid">
+        <article className="info-card">
+          <h2>Panel conductor</h2>
+          <label>
+            Conductor activo
+            <select value={selectedDriverId} onChange={(event) => setSelectedDriverId(event.target.value)}>
+              {drivers.map((driver) => (
+                <option key={driver.id} value={driver.id}>
+                  {driver.name} · {driver.city}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>{message || 'Desde aquí puedes simular movimientos, aceptar viajes y finalizarlos.'}</p>
+        </article>
+
+        <article className="info-card">
+          <h2>Controles rápidos</h2>
+          <div className="button-row wrap">
+            <button onClick={() => changeStatus('disponible')}>Disponible</button>
+            <button onClick={() => changeStatus('ocupado')}>Ocupado</button>
+            <button onClick={() => changeStatus('offline')}>Offline</button>
+          </div>
+          <div className="button-row wrap">
+            <button onClick={() => moveDriver(0.003, 0)}>Mover norte</button>
+            <button onClick={() => moveDriver(-0.003, 0)}>Mover sur</button>
+            <button onClick={() => moveDriver(0, 0.003)}>Mover este</button>
+            <button onClick={() => moveDriver(0, -0.003)}>Mover oeste</button>
+          </div>
+        </article>
+      </section>
+
+      <MapView
+        center={city?.center ?? { lat: -26.8241, lng: -65.2226 }}
+        passenger={selectedDriver ? { lat: Number(selectedDriver.lat), lng: Number(selectedDriver.lng) } : null}
+        destination={null}
+        drivers={drivers.filter((item) => item.city === selectedDriver?.city)}
+      />
+
+      <TableCard
+        title="Viajes para este conductor / ciudad"
+        columns={[
+          { key: 'passengerName', label: 'Pasajero' },
+          { key: 'originText', label: 'Origen' },
+          { key: 'destinationText', label: 'Destino' },
+          { key: 'paymentMethod', label: 'Pago' },
+          { key: 'status', label: 'Estado', type: 'status' }
+        ]}
+        rows={pendingTrips}
+        actions={(row) => (
+          <div className="action-stack">
+            <button onClick={() => acceptTrip(row.id)}>Aceptar</button>
+            <button onClick={() => setStatusTrip(row.id, 'en_camino')}>En camino</button>
+            <button onClick={() => setStatusTrip(row.id, 'en_viaje')}>En viaje</button>
+            <button onClick={() => setStatusTrip(row.id, 'finalizado')}>Finalizar</button>
+          </div>
+        )}
+      />
     </div>
   );
 }

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TucuGo Admin - Viajes en tiempo real</title>
+  <style>
+    body{margin:0;font-family:Arial;background:#f5f7fb;color:#1f2937}
+    .topbar{background:linear-gradient(135deg,#ff7a00,#ff9f43);color:#fff;padding:18px 20px}
+    .topbar h1{margin:0}
+    .nav{display:flex;gap:10px;padding:12px;background:#fff;border-bottom:1px solid #ddd}
+    .nav a{text-decoration:none;background:#111827;color:#fff;padding:8px 12px;border-radius:8px;font-size:14px}
+    .container{max-width:1300px;margin:auto;padding:20px}
+    .tablero{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+    .columna{background:#eef2f7;border-radius:14px;padding:12px}
+    .columna h2{margin:0 0 10px}
+    .lista{display:flex;flex-direction:column;gap:10px}
+    .card{background:#fff;border-radius:12px;padding:12px;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+    .card.solicitado{border-left:5px solid orange}
+    .card.aceptado{border-left:5px solid #3b82f6}
+    .card.en_viaje{border-left:5px solid #8b5cf6}
+    .card.finalizado{border-left:5px solid #10b981}
+    .card.cancelado{border-left:5px solid #ef4444}
+    .dato{font-size:14px;margin:2px 0}
+    .acciones{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+    button{border:none;border-radius:8px;padding:6px 10px;color:#fff;cursor:pointer;font-size:13px}
+    .aceptar{background:#2563eb}
+    .iniciar{background:#7c3aed}
+    .finalizar{background:#059669}
+    .cancelar{background:#dc2626}
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+<h1>TucuGo Admin</h1>
+<p>Panel de viajes en tiempo real</p>
+</header>
+
+<nav class="nav">
+<a href="./index.html">Inicio</a>
+<a href="./admin.html">Admin</a>
+<a href="./conductores.html">Conductores</a>
+<a href="./panel-viajes.html">Viajes</a>
+</nav>
+
+<div class="container">
+<div class="tablero">
+
+<div class="columna">
+<h2>Solicitados</h2>
+<div class="lista" id="solicitado"></div>
+</div>
+
+<div class="columna">
+<h2>Aceptados</h2>
+<div class="lista" id="aceptado"></div>
+</div>
+
+<div class="columna">
+<h2>En viaje</h2>
+<div class="lista" id="en_viaje"></div>
+</div>
+
+<div class="columna">
+<h2>Finalizados</h2>
+<div class="lista" id="finalizado"></div>
+</div>
+
+<div class="columna">
+<h2>Cancelados</h2>
+<div class="lista" id="cancelado"></div>
+</div>
+
+</div>
+</div>
+
+<script type="module" src="./panel-viajes.js"></script>
+</body>
+</html>

@@ -1,149 +1,215 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, Badge } from '../components/Card';
-import { calculatePrice, formatMoney } from '../services/pricing';
-import { appSettings } from '../config/appConfig';
+import MapView from '../components/MapView.jsx';
+import { SUPPORTED_PAYMENT_METHODS } from '../config/appConfig.js';
+import { getBrowserPosition, estimateDurationMinutes, findNearestAvailableDriver, haversineKm } from '../services/geo.js';
+import { calculatePrice, formatMoney } from '../services/pricing.js';
+import { createTrip } from '../services/tripService.js';
 
-const paymentMethods = ['efectivo', 'transferencia', 'tarjeta', 'cripto'];
+export default function PassengerPanel({ cities, drivers, refreshAll }) {
+  const [selectedCity, setSelectedCity] = useState(cities[0]?.id || 'tucuman');
+  const [passengerName, setPassengerName] = useState('Marcelo');
+  const [passengerPhone, setPassengerPhone] = useState('+543810000000');
+  const [originText, setOriginText] = useState('Mi ubicación actual');
+  const [destinationText, setDestinationText] = useState('Ingenio Leales');
+  const [paymentMethod, setPaymentMethod] = useState('Transferencia');
+  const [notes, setNotes] = useState('Viaje demo');
+  const [position, setPosition] = useState(null);
+  const [destinationOffsetKm, setDestinationOffsetKm] = useState(6);
+  const [message, setMessage] = useState('');
 
-export default function PassengerPanel({ data, onCreateTrip, loading }) {
-  const passenger = data.users.find((user) => user.rol === 'pasajero') || data.users[0];
-  const [countryId, setCountryId] = useState(passenger?.pais || appSettings.defaultCountry);
-  const [cityId, setCityId] = useState(passenger?.ciudad || appSettings.defaultCity);
-  const [paymentMethod, setPaymentMethod] = useState('transferencia');
-  const [cryptoMoneda, setCryptoMoneda] = useState(appSettings.cryptoCurrencies[0]);
-  const [form, setForm] = useState({
-    origenTexto: 'Santa Rosa',
-    origenLat: -26.8204,
-    origenLng: -65.1996,
-    destinoTexto: 'Ingenio Leales',
-    destinoLat: -27.121,
-    destinoLng: -65.141,
-    servicio: 'auto'
-  });
-
-  const cities = useMemo(
-    () => data.cities.filter((city) => city.pais === countryId),
-    [countryId, data.cities]
+  const city = useMemo(
+    () => cities.find((item) => item.id === selectedCity) ?? cities[0],
+    [cities, selectedCity]
   );
 
   useEffect(() => {
-    if (!cities.find((city) => city.id === cityId) && cities[0]) {
-      setCityId(cities[0].id);
+    async function loadPosition() {
+      if (!city) return;
+      const current = await getBrowserPosition(city.center);
+      setPosition(current);
     }
-  }, [cities, cityId]);
+    loadPosition();
+  }, [city]);
 
-  const selectedCity = data.cities.find((city) => city.id === cityId) || cities[0];
-  const selectedCountry = data.countries.find((country) => country.id === countryId);
-  const estimate = selectedCity
-    ? calculatePrice(
-        selectedCity,
-        { lat: Number(form.origenLat), lng: Number(form.origenLng) },
-        { lat: Number(form.destinoLat), lng: Number(form.destinoLng) }
-      )
-    : { distanciaKm: 0, duracionMin: 0, precio: 0 };
+  const destinationPoint = useMemo(() => {
+    if (!position) return null;
+    return {
+      lat: Number(position.lat) + Number(destinationOffsetKm) * 0.01,
+      lng: Number(position.lng) + Number(destinationOffsetKm) * 0.006,
+      text: destinationText
+    };
+  }, [position, destinationOffsetKm, destinationText]);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    await onCreateTrip({
-      passengerId: passenger.id,
-      cityId,
-      servicio: form.servicio,
-      pagoMetodo: paymentMethod,
-      cryptoMoneda: paymentMethod === 'cripto' ? cryptoMoneda : '',
-      origen: {
-        texto: form.origenTexto,
-        lat: Number(form.origenLat),
-        lng: Number(form.origenLng)
-      },
-      destino: {
-        texto: form.destinoTexto,
-        lat: Number(form.destinoLat),
-        lng: Number(form.destinoLng)
-      }
+  const estimate = useMemo(() => {
+    if (!city || !position || !destinationPoint) return null;
+
+    const distanceKm = haversineKm(position, destinationPoint);
+    const durationMin = estimateDurationMinutes(distanceKm);
+    const price = calculatePrice({
+      baseFare: city.baseFare,
+      priceKm: city.priceKm,
+      priceMinute: city.priceMinute,
+      distanceKm,
+      durationMin,
+      minimumFare: city.baseFare
     });
+
+    return {
+      distanceKm: Number(distanceKm.toFixed(2)),
+      durationMin,
+      price,
+      formatted: formatMoney(price, city.currency)
+    };
+  }, [city, position, destinationPoint]);
+
+  const nearestDriver = useMemo(() => {
+    if (!position) return null;
+    return findNearestAvailableDriver({
+      drivers,
+      city: selectedCity,
+      origin: position
+    });
+  }, [drivers, selectedCity, position]);
+
+  async function useCurrentLocation() {
+    if (!city) return;
+    const current = await getBrowserPosition(city.center);
+    setPosition(current);
+    setMessage('Ubicación actualizada desde el navegador.');
+  }
+
+  async function handleRequestTrip(event) {
+    event.preventDefault();
+    if (!city || !position || !destinationPoint || !estimate) return;
+
+    try {
+      await createTrip({
+        passengerName,
+        passengerPhone,
+        country: city.country,
+        city: city.id,
+        currency: city.currency,
+        originText,
+        originLat: position.lat,
+        originLng: position.lng,
+        destinationText,
+        destinationLat: destinationPoint.lat,
+        destinationLng: destinationPoint.lng,
+        estimatedDistanceKm: estimate.distanceKm,
+        estimatedDurationMin: estimate.durationMin,
+        price: estimate.price,
+        paymentMethod,
+        notes,
+        cryptoWallet: paymentMethod === 'USDC' || paymentMethod === 'USDT' || paymentMethod === 'BTC' ? 'wallet-demo-001' : '',
+        cryptoTxId: ''
+      });
+
+      setMessage('Viaje creado correctamente. Ahora puedes asignarlo desde Admin o aceptarlo desde Conductor.');
+      await refreshAll();
+    } catch (error) {
+      setMessage(`No se pudo crear el viaje: ${error.message}`);
+    }
   }
 
   return (
-    <div className="grid two-col">
-      <Card title="Pedir viaje" subtitle="Listo para cualquier ciudad configurada">
-        <form className="form-grid" onSubmit={handleSubmit}>
-          <label>
-            <span>País</span>
-            <select value={countryId} onChange={(e) => setCountryId(e.target.value)}>
-              {data.countries.map((country) => <option key={country.id} value={country.id}>{country.nombre}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Ciudad</span>
-            <select value={cityId} onChange={(e) => setCityId(e.target.value)}>
-              {cities.map((city) => <option key={city.id} value={city.id}>{city.nombre}</option>)}
-            </select>
-          </label>
-          <label className="full">
-            <span>Origen</span>
-            <input value={form.origenTexto} onChange={(e) => setForm({ ...form, origenTexto: e.target.value })} />
-          </label>
-          <label>
-            <span>Lat origen</span>
-            <input type="number" step="0.0001" value={form.origenLat} onChange={(e) => setForm({ ...form, origenLat: e.target.value })} />
-          </label>
-          <label>
-            <span>Lng origen</span>
-            <input type="number" step="0.0001" value={form.origenLng} onChange={(e) => setForm({ ...form, origenLng: e.target.value })} />
-          </label>
-          <label className="full">
-            <span>Destino</span>
-            <input value={form.destinoTexto} onChange={(e) => setForm({ ...form, destinoTexto: e.target.value })} />
-          </label>
-          <label>
-            <span>Lat destino</span>
-            <input type="number" step="0.0001" value={form.destinoLat} onChange={(e) => setForm({ ...form, destinoLat: e.target.value })} />
-          </label>
-          <label>
-            <span>Lng destino</span>
-            <input type="number" step="0.0001" value={form.destinoLng} onChange={(e) => setForm({ ...form, destinoLng: e.target.value })} />
-          </label>
-          <label>
-            <span>Servicio</span>
-            <select value={form.servicio} onChange={(e) => setForm({ ...form, servicio: e.target.value })}>
-              {data.vehicleTypes.map((item) => <option key={item.id} value={item.id}>{item.icono} {item.nombre}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Método de pago</span>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-              {paymentMethods.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          {paymentMethod === 'cripto' ? (
-            <label className="full">
-              <span>Cripto</span>
-              <select value={cryptoMoneda} onChange={(e) => setCryptoMoneda(e.target.value)}>
-                {appSettings.cryptoCurrencies.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </label>
-          ) : null}
-          <div className="full actions">
-            <button className="primary" disabled={loading} type="submit">Crear viaje</button>
-          </div>
-        </form>
-      </Card>
+    <div className="stack-lg">
+      <section className="form-map-grid">
+        <form className="stack-md form-card" onSubmit={handleRequestTrip}>
+          <h2>Pedir viaje</h2>
 
-      <Card title="Estimación" subtitle="Tarifa calculada según distancia y tiempo">
-        <div className="stats-grid">
-          <div className="stat-box"><span>Distancia</span><strong>{estimate.distanciaKm} km</strong></div>
-          <div className="stat-box"><span>Duración</span><strong>{estimate.duracionMin} min</strong></div>
-          <div className="stat-box"><span>Precio</span><strong>{formatMoney(estimate.precio, selectedCountry?.moneda)}</strong></div>
-          <div className="stat-box"><span>Cripto</span><strong>{paymentMethod === 'cripto' ? cryptoMoneda : 'No'}</strong></div>
+          <label>
+            Ciudad
+            <select value={selectedCity} onChange={(event) => setSelectedCity(event.target.value)}>
+              {cities.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Pasajero
+            <input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} />
+          </label>
+
+          <label>
+            Teléfono
+            <input value={passengerPhone} onChange={(event) => setPassengerPhone(event.target.value)} />
+          </label>
+
+          <label>
+            Origen
+            <input value={originText} onChange={(event) => setOriginText(event.target.value)} />
+          </label>
+
+          <label>
+            Destino
+            <input value={destinationText} onChange={(event) => setDestinationText(event.target.value)} />
+          </label>
+
+          <label>
+            Distancia aproximada al destino (demo en km)
+            <input
+              type="number"
+              min="1"
+              max="30"
+              value={destinationOffsetKm}
+              onChange={(event) => setDestinationOffsetKm(event.target.value)}
+            />
+          </label>
+
+          <label>
+            Método de pago
+            <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+              {SUPPORTED_PAYMENT_METHODS.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Notas
+            <textarea rows="3" value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </label>
+
+          <div className="button-row">
+            <button type="button" onClick={useCurrentLocation}>Usar mi ubicación</button>
+            <button type="submit" className="primary-button">Crear viaje</button>
+          </div>
+
+          <p className="helper-text">{message || 'Puedes usar OpenStreetMap sin pagar claves para el mapa base.'}</p>
+        </form>
+
+        <div className="stack-md">
+          <MapView center={city?.center ?? { lat: -26.8241, lng: -65.2226 }} passenger={position} destination={destinationPoint} drivers={drivers.filter((item) => item.city === selectedCity)} />
+
+          <div className="info-grid">
+            <article className="info-card highlight">
+              <h2>Precio estimado</h2>
+              <strong className="big-number">{estimate ? estimate.formatted : '—'}</strong>
+              <p>
+                Distancia: {estimate ? `${estimate.distanceKm} km` : '—'} · Tiempo: {estimate ? `${estimate.durationMin} min` : '—'}
+              </p>
+            </article>
+
+            <article className="info-card">
+              <h2>Conductor más cercano</h2>
+              {nearestDriver ? (
+                <>
+                  <strong>{nearestDriver.name}</strong>
+                  <p>{nearestDriver.vehicle}</p>
+                  <p>Aprox. {nearestDriver.distanceKm.toFixed(2)} km del pasajero.</p>
+                </>
+              ) : (
+                <p>No hay conductores disponibles en esta ciudad.</p>
+              )}
+            </article>
+          </div>
         </div>
-        <div className="hint-box">
-          <Badge tone="info">Idea fuerte</Badge>
-          <p>
-            Para lanzar cripto de forma seria, comienza con stablecoins como USDC o USDT. BTC
-            puede quedar como opción adicional por volatilidad.
-          </p>
-        </div>
-      </Card>
+      </section>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
-  "name": "tucugo-global-definitivo",
+  "name": "tucugo-definitivo-uber",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,12 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^11.6.1",
+    "firebase": "^12.10.0",
+    "leaflet": "^1.9.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
+    "workbox-window": "^7.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^5.4.14"
+    "vite": "^5.4.21",
+    "vite-plugin-pwa": "^0.20.5"
   }
 }
