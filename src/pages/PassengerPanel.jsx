@@ -326,6 +326,23 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     });
   }
 
+  async function liberarConductorSiExiste() {
+    const driverId =
+      myLatestTrip?.conductorId ||
+      myLatestTrip?.driverId ||
+      '';
+
+    if (!driverId) return;
+
+    await updateDoc(doc(db, 'conductores', driverId), {
+      estado: 'disponible',
+      status: 'disponible',
+      viajeActualId: '',
+      updatedAt: serverTimestamp(),
+      actualizadoEn: serverTimestamp()
+    });
+  }
+
   function extraerTripId(result) {
     if (!result) return '';
     if (typeof result === 'string') return result;
@@ -443,6 +460,42 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
   }
 
+  async function cancelarMiViaje() {
+    if (!myLatestTrip?.id) {
+      alert('No tienes un viaje activo para cancelar.');
+      return;
+    }
+
+    const status = myLatestTrip?.estado || myLatestTrip?.status || '';
+    const cancelables = ['solicitado', 'aceptado', 'en_camino', 'llegue'];
+
+    if (!cancelables.includes(status)) {
+      alert('Este viaje ya no se puede cancelar desde el pasajero.');
+      return;
+    }
+
+    const confirmar = window.confirm('¿Seguro que quieres cancelar tu viaje?');
+    if (!confirmar) return;
+
+    try {
+      await updateDoc(doc(db, 'viajes', myLatestTrip.id), {
+        estado: 'cancelado',
+        status: 'cancelado',
+        canceladoPor: 'pasajero',
+        canceledBy: 'pasajero',
+        updatedAt: serverTimestamp(),
+        actualizadoEn: serverTimestamp()
+      });
+
+      await liberarConductorSiExiste();
+      setMessage('Tu viaje fue cancelado correctamente.');
+      await refreshAll();
+    } catch (error) {
+      console.error('Error cancelando viaje:', error);
+      alert('No se pudo cancelar el viaje.');
+    }
+  }
+
   function limpiarTelefono(phone) {
     return String(phone || '').replace(/[^\d]/g, '');
   }
@@ -490,6 +543,11 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     const texto = encodeURIComponent(textoBase);
     window.open(`https://wa.me/${numero}?text=${texto}`, '_blank');
   }
+
+  const canCancelTrip = useMemo(() => {
+    const status = myLatestTrip?.estado || myLatestTrip?.status || '';
+    return ['solicitado', 'aceptado', 'en_camino', 'llegue'].includes(status);
+  }, [myLatestTrip]);
 
   return (
     <div className="stack-lg">
@@ -666,6 +724,14 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
                 <button className="btn verde" onClick={whatsappAlConductor}>
                   WhatsApp conductor
+                </button>
+
+                <button
+                  className="btn gris"
+                  onClick={cancelarMiViaje}
+                  disabled={!canCancelTrip}
+                >
+                  Cancelar viaje
                 </button>
               </div>
             </article>
