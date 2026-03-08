@@ -359,6 +359,41 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
     window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
   }
 
+  function limpiarTelefono(phone) {
+    return String(phone || '').replace(/[^\d]/g, '');
+  }
+
+  function llamarAlPasajero() {
+    const phone =
+      viajeActual?.passengerPhone ||
+      viajeActual?.telefonoPasajero;
+
+    if (!phone) {
+      alert('El pasajero no tiene teléfono.');
+      return;
+    }
+
+    window.location.href = `tel:${phone}`;
+  }
+
+  function whatsappAlPasajero() {
+    const phone =
+      viajeActual?.passengerPhone ||
+      viajeActual?.telefonoPasajero;
+
+    if (!phone) {
+      alert('El pasajero no tiene teléfono.');
+      return;
+    }
+
+    const numero = limpiarTelefono(phone);
+    const texto = encodeURIComponent(
+      `Hola, soy ${nombre}, tu conductor de TucuGo.`
+    );
+
+    window.open(`https://wa.me/${numero}?text=${texto}`, '_blank');
+  }
+
   return (
     <div className="conductor-page">
       <header className="conductor-header">
@@ -475,6 +510,14 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
             <p><strong>Precio:</strong> ${viajeActual.price || viajeActual.precio || 0}</p>
 
             <div className="botones-grid">
+              <button className="btn verde" onClick={llamarAlPasajero}>
+                📞 Llamar pasajero
+              </button>
+
+              <button className="btn verde" onClick={whatsappAlPasajero}>
+                WhatsApp pasajero
+              </button>
+
               <button className="btn azul" onClick={abrirMaps}>
                 Abrir Google Maps
               </button>

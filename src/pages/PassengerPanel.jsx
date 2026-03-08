@@ -443,6 +443,10 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
   }
 
+  function limpiarTelefono(phone) {
+    return String(phone || '').replace(/[^\d]/g, '');
+  }
+
   function llamarAlConductor() {
     const phone =
       assignedDriver?.phone ||
@@ -455,6 +459,25 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
 
     window.location.href = `tel:${phone}`;
+  }
+
+  function whatsappAlConductor() {
+    const phone =
+      assignedDriver?.phone ||
+      assignedDriver?.telefono ||
+      myLatestTrip?.conductorTelefono;
+
+    if (!phone) {
+      alert('El conductor no tiene teléfono registrado.');
+      return;
+    }
+
+    const numero = limpiarTelefono(phone);
+    const texto = encodeURIComponent(
+      `Hola, soy ${passengerName}. Te escribo por el viaje en TucuGo.`
+    );
+
+    window.open(`https://wa.me/${numero}?text=${texto}`, '_blank');
   }
 
   return (
@@ -625,9 +648,13 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
                 {driverDistanceKm != null ? `${driverDistanceKm.toFixed(2)} km` : '—'}
               </p>
 
-              <div style={{ marginTop: '12px' }}>
+              <div className="botones-grid" style={{ marginTop: '12px' }}>
                 <button className="btn verde" onClick={llamarAlConductor}>
                   📞 Llamar al conductor
+                </button>
+
+                <button className="btn verde" onClick={whatsappAlConductor}>
+                  WhatsApp conductor
                 </button>
               </div>
             </article>
