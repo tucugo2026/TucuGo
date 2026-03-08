@@ -108,6 +108,12 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
           title: 'Conductor en camino',
           text: 'Tu conductor está yendo hacia tu ubicación.'
         };
+      case 'llegue':
+        return {
+          type: 'warning',
+          title: 'Tu conductor llegó',
+          text: 'El conductor ya está en el punto de recogida.'
+        };
       case 'en_viaje':
         return {
           type: 'success',
@@ -286,6 +292,8 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
         return 'Tu conductor fue asignado';
       case 'en_camino':
         return 'Tu conductor está en camino';
+      case 'llegue':
+        return 'Tu conductor ya llegó al punto de recogida';
       case 'en_viaje':
         return 'Tu viaje está en curso';
       case 'finalizado':

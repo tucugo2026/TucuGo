@@ -212,7 +212,7 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
       trips.find((trip) => {
         const tripDriverId = trip?.conductorId || trip?.driverId || trip?.conductorUid;
         const mismoConductor = tripDriverId === conductorId;
-        const activo = ['aceptado', 'en_camino', 'en_viaje'].includes(trip?.estado || trip?.status);
+        const activo = ['aceptado', 'en_camino', 'llegue', 'en_viaje'].includes(trip?.estado || trip?.status);
         return mismoConductor && activo;
       }) || null
     );
@@ -484,6 +484,13 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
                 onClick={() => cambiarEstadoViaje('en_camino')}
               >
                 En camino
+              </button>
+
+              <button
+                className="btn azul"
+                onClick={() => cambiarEstadoViaje('llegue')}
+              >
+                Llegué
               </button>
 
               <button
