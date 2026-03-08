@@ -13,6 +13,38 @@ import { haversineKm } from '../../services/geo.js';
 import RatingStars from '../../components/RatingStars.jsx';
 import './ConductorPanel.css';
 
+function buildOsrmUrl(start, end) {
+  return `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=false`;
+}
+
+async function fetchRouteSummary(start, end) {
+  if (!start || !end) {
+    return {
+      distanceKm: null,
+      durationMin: null
+    };
+  }
+
+  const response = await fetch(buildOsrmUrl(start, end));
+  if (!response.ok) {
+    throw new Error('No se pudo obtener la ruta');
+  }
+
+  const data = await response.json();
+  const route = data?.routes?.[0];
+
+  return {
+    distanceKm:
+      typeof route?.distance === 'number'
+        ? Number((route.distance / 1000).toFixed(2))
+        : null,
+    durationMin:
+      typeof route?.duration === 'number'
+        ? Math.max(1, Math.round(route.duration / 60))
+        : null
+  };
+}
+
 export default function ConductorPanel({ profile, trips, refreshAll }) {
   const conductorId =
     profile?.uid ||
@@ -28,6 +60,15 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
   const [actualizando, setActualizando] = useState(false);
   const [pendingTrips, setPendingTrips] = useState([]);
   const [historial, setHistorial] = useState([]);
+  const [etaToPassenger, setEtaToPassenger] = useState({
+    distanceKm: null,
+    durationMin: null
+  });
+  const [etaToDestination, setEtaToDestination] = useState({
+    distanceKm: null,
+    durationMin: null
+  });
+
   const watchIdRef = useRef(null);
 
   useEffect(() => {
@@ -217,6 +258,7 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
   const estado = conductor?.estado || conductor?.status || 'pendiente';
   const vehiculo = conductor?.vehiculo || conductor?.vehiculoNombre || conductor?.vehicleType || '-';
   const patente = conductor?.patente || '-';
+
   const conductorVehicleType = (
     conductor?.vehicleType ||
     conductor?.vehiculoTipo ||
@@ -233,7 +275,9 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
       trips.find((trip) => {
         const tripDriverId = trip?.conductorId || trip?.driverId || trip?.conductorUid;
         const mismoConductor = tripDriverId === conductorId;
-        const activo = ['aceptado', 'en_camino', 'llegue', 'en_viaje', 'finalizado'].includes(trip?.estado || trip?.status);
+        const activo = ['aceptado', 'en_camino', 'llegue', 'en_viaje', 'finalizado'].includes(
+          trip?.estado || trip?.status
+        );
         return mismoConductor && activo;
       }) || null
     );
@@ -315,6 +359,136 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
     const total = ratings.reduce((a, b) => a + b, 0);
     return (total / ratings.length).toFixed(1);
   }, [historial]);
+
+  const passengerPoint = useMemo(() => {
+    if (!viajeActual) return null;
+
+    const lat =
+      viajeActual?.originLat ??
+      viajeActual?.origenLat ??
+      viajeActual?.pickupLat ??
+      null;
+
+    const lng =
+      viajeActual?.originLng ??
+      viajeActual?.origenLng ??
+      viajeActual?.pickupLng ??
+      null;
+
+    if (lat == null || lng == null) return null;
+
+    return { lat, lng };
+  }, [viajeActual]);
+
+  const destinationPoint = useMemo(() => {
+    if (!viajeActual) return null;
+
+    const lat =
+      viajeActual?.destinationLat ??
+      viajeActual?.destinoLat ??
+      viajeActual?.dropoffLat ??
+      null;
+
+    const lng =
+      viajeActual?.destinationLng ??
+      viajeActual?.destinoLng ??
+      viajeActual?.dropoffLng ??
+      null;
+
+    if (lat == null || lng == null) return null;
+
+    return { lat, lng };
+  }, [viajeActual]);
+
+  const driverPoint = useMemo(() => {
+    if (conductor?.ubicacion?.lat == null || conductor?.ubicacion?.lng == null) return null;
+    return {
+      lat: conductor.ubicacion.lat,
+      lng: conductor.ubicacion.lng
+    };
+  }, [conductor]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadEtaPassenger() {
+      try {
+        if (!driverPoint || !passengerPoint) {
+          setEtaToPassenger({ distanceKm: null, durationMin: null });
+          return;
+        }
+
+        const data = await fetchRouteSummary(driverPoint, passengerPoint);
+        if (!cancelled) setEtaToPassenger(data);
+      } catch (error) {
+        console.error('ETA pasajero:', error);
+        if (!cancelled) setEtaToPassenger({ distanceKm: null, durationMin: null });
+      }
+    }
+
+    loadEtaPassenger();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [driverPoint, passengerPoint]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadEtaDestination() {
+      try {
+        if (!driverPoint || !destinationPoint) {
+          setEtaToDestination({ distanceKm: null, durationMin: null });
+          return;
+        }
+
+        const data = await fetchRouteSummary(driverPoint, destinationPoint);
+        if (!cancelled) setEtaToDestination(data);
+      } catch (error) {
+        console.error('ETA destino:', error);
+        if (!cancelled) setEtaToDestination({ distanceKm: null, durationMin: null });
+      }
+    }
+
+    loadEtaDestination();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [driverPoint, destinationPoint]);
+
+  const etaPassengerMessage = useMemo(() => {
+    const status = viajeActual?.estado || viajeActual?.status || '';
+
+    if (!viajeActual) return '—';
+
+    if (status === 'aceptado' || status === 'en_camino') {
+      return etaToPassenger.durationMin != null
+        ? `Llegas al pasajero en ${etaToPassenger.durationMin} min`
+        : 'Calculando llegada al pasajero...';
+    }
+
+    if (status === 'llegue') {
+      return 'Ya estás en el punto de recogida';
+    }
+
+    return '—';
+  }, [viajeActual, etaToPassenger]);
+
+  const etaDestinationMessage = useMemo(() => {
+    const status = viajeActual?.estado || viajeActual?.status || '';
+
+    if (!viajeActual) return '—';
+
+    if (status === 'en_viaje') {
+      return etaToDestination.durationMin != null
+        ? `Llegas al destino en ${etaToDestination.durationMin} min`
+        : 'Calculando llegada al destino...';
+    }
+
+    return '—';
+  }, [viajeActual, etaToDestination]);
 
   async function aceptarViaje(trip) {
     try {
@@ -596,6 +770,26 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
             <p><strong>Pago:</strong> {viajeActual.paymentMethod || viajeActual.metodoPago || '-'}</p>
             <p><strong>Precio:</strong> ${viajeActual.price || viajeActual.precio || 0}</p>
 
+            <p>
+              <strong>Distancia real al pasajero:</strong>{' '}
+              {etaToPassenger.distanceKm != null ? `${etaToPassenger.distanceKm} km` : '—'}
+            </p>
+            <p>
+              <strong>ETA al pasajero:</strong>{' '}
+              {etaToPassenger.durationMin != null ? `${etaToPassenger.durationMin} min` : '—'}
+            </p>
+            <p><strong>{etaPassengerMessage}</strong></p>
+
+            <p>
+              <strong>Distancia real al destino:</strong>{' '}
+              {etaToDestination.distanceKm != null ? `${etaToDestination.distanceKm} km` : '—'}
+            </p>
+            <p>
+              <strong>ETA al destino:</strong>{' '}
+              {etaToDestination.durationMin != null ? `${etaToDestination.durationMin} min` : '—'}
+            </p>
+            <p><strong>{etaDestinationMessage}</strong></p>
+
             <div className="botones-grid">
               <button className="btn verde" onClick={llamarAlPasajero}>
                 📞 Llamar pasajero
@@ -655,7 +849,10 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
             {viajeActual?.estado === 'finalizado' && viajeActual?.ratingPassenger ? (
               <div style={{ marginTop: '20px' }}>
                 <h3>Tu calificación al pasajero</h3>
-                <RatingStars initialValue={Number(viajeActual.ratingPassenger)} readonly={true} />
+                <RatingStars
+                  initialValue={Number(viajeActual.ratingPassenger)}
+                  readonly={true}
+                />
               </div>
             ) : null}
           </>
