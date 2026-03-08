@@ -1,0 +1,88 @@
+.conductor-page {
+  min-height: 100vh;
+  background: #f4f6fb;
+  padding: 16px;
+  color: #1f2937;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.conductor-header {
+  background: linear-gradient(135deg, #ff7a00, #ff9f43);
+  color: white;
+  padding: 18px;
+  border-radius: 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.conductor-header h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+}
+
+.conductor-header p {
+  margin: 0;
+  opacity: 0.95;
+}
+
+.conductor-card {
+  background: white;
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+
+.conductor-card.principal {
+  border-left: 6px solid #ff7a00;
+}
+
+.conductor-card h2,
+.conductor-card h3 {
+  margin-top: 0;
+}
+
+.botones-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.btn {
+  border: none;
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+  cursor: pointer;
+  width: 100%;
+}
+
+.btn.azul {
+  background: #2563eb;
+}
+
+.btn.verde {
+  background: #059669;
+}
+
+.btn.naranja {
+  background: #ea580c;
+}
+
+.btn.gris {
+  background: #6b7280;
+}
+
+.error-text {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+@media (min-width: 768px) {
+  .botones-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
