@@ -1,90 +1,80 @@
-# TucuGo
+# TucuGo Global Definitivo
 
-Proyecto base de una app tipo Uber enfocada en Tucumán.
+Base inicial de TucuGo pensada para crecer desde Tucumán a cualquier ciudad del mundo.
 
-## Estructura
+## Qué trae
 
-- `apps/pasajero_flutter`: app móvil para pasajeros
-- `apps/conductor_flutter`: app móvil para conductores
-- `apps/admin_web`: panel administrador web
-- `backend/functions`: lógica backend con Firebase Functions
-- `firebase`: reglas de seguridad y configuración base
-- `docs`: documentación técnica
+- Panel **Admin**
+- Panel **Pasajero**
+- Panel **Conductor**
+- Modelo global para **Firestore**
+- Modo **demo local** con `localStorage`
+- Soporte inicial para pagos: efectivo, transferencia, tarjeta y cripto
+- Estructura lista para **Firebase + GitHub Pages**
 
-## Estado
+## Estructura de Firestore sugerida
 
-Este ZIP contiene una **base inicial funcional de arranque**. No es el producto final completo, pero sí un punto sólido para empezar a desarrollar:
+- `countries`
+- `cities`
+- `vehicleTypes`
+- `drivers`
+- `users`
+- `trips`
 
-- autenticación preparada a nivel estructura
-- modelos iniciales
-- panel admin base
-- formularios y pantallas iniciales
-- reglas Firebase iniciales
+## Cómo usarlo en modo demo
 
-## Tecnologías elegidas
-
-- Flutter
-- React + Vite
-- Firebase Auth
-- Firestore
-- Firebase Storage
-- Firebase Functions
-
-## Próximos pasos
-
-1. Crear proyecto Firebase real
-2. Completar credenciales Firebase en cada app
-3. Crear colecciones de Firestore
-4. Levantar admin web
-5. Probar alta de conductores
-6. Integrar aprobación de choferes
-7. Luego integrar viajes, mapas, chat y pagos
-
-## Requisitos
-
-### Admin web
-- Node.js 20+
-
-### Apps Flutter
-- Flutter 3.24+
-
-## Arranque rápido
-
-### Admin web
 ```bash
-cd apps/admin_web
 npm install
 npm run dev
 ```
 
-### Functions
+Si no completas Firebase, la app funciona igual con datos demo locales.
+
+## Cómo conectarlo a Firebase
+
+Editar:
+
+`src/config/appConfig.js`
+
+Completa:
+
+```js
+export const firebaseConfig = {
+  apiKey: 'TU_API_KEY',
+  authDomain: 'TU_AUTH_DOMAIN',
+  projectId: 'TU_PROJECT_ID',
+  storageBucket: 'TU_STORAGE_BUCKET',
+  messagingSenderId: 'TU_MESSAGING_SENDER_ID',
+  appId: 'TU_APP_ID'
+};
+```
+
+Luego, desde el panel Admin, pulsa **Sembrar base** para crear colecciones iniciales.
+
+## Despliegue en GitHub Pages
+
 ```bash
-cd backend/functions
 npm install
 npm run build
 ```
 
-### Flutter pasajero
-```bash
-cd apps/pasajero_flutter
-flutter pub get
-flutter run
-```
+Sube el contenido de `dist/` a tu repositorio o usa GitHub Actions / Pages.
 
-### Flutter conductor
-```bash
-cd apps/conductor_flutter
-flutter pub get
-flutter run
-```
+## Flujo actual
 
-## Importante
+1. El pasajero crea un viaje.
+2. El admin puede asignar el conductor más cercano.
+3. El conductor acepta, inicia y finaliza.
+4. El viaje vuelve a liberar al conductor.
 
-Todavía faltan:
-- mapa en vivo
-- chat del viaje
-- pagos con Mercado Pago
-- asignación automática de conductor
-- notificaciones push reales
+## Recomendación sobre cripto
 
-Pero ya queda montada una base ordenada para avanzar.
+Para arrancar, conviene usar **USDC o USDT** como opción principal y dejar **BTC** como complemento.
+
+## Qué te conviene hacer después
+
+- Autenticación real con Firebase Auth
+- Mapas con Mapbox o Google Maps
+- Ubicación en tiempo real
+- Pasarela de cobro cripto y pagos tradicionales
+- Reglas de seguridad de Firestore
