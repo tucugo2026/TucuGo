@@ -709,3 +709,244 @@ button:hover {
   color: #0A3570;
   border: 1px solid rgba(13,74,151,0.12);
 }
+
+.driver-mobile-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.driver-hero-card,
+.driver-current-trip-card,
+.driver-trip-list-card,
+.driver-summary-card {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(33, 86, 242, 0.08);
+  border-radius: 26px;
+  box-shadow: 0 14px 40px rgba(40, 78, 156, 0.08);
+}
+
+.driver-hero-card,
+.driver-current-trip-card,
+.driver-trip-list-card {
+  padding: 20px;
+}
+
+.driver-hero-card {
+  display: grid;
+  gap: 14px;
+}
+
+.driver-hero-card h2,
+.driver-current-trip-card h2,
+.driver-trip-list-card h2 {
+  margin: 0;
+}
+
+.driver-hero-subtitle {
+  margin: 8px 0 0;
+  color: #53627f;
+  line-height: 1.5;
+}
+
+.driver-status-pill-row,
+.driver-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.driver-summary-grid,
+.driver-action-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.driver-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.driver-action-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.driver-summary-card {
+  padding: 16px 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.driver-summary-card small,
+.driver-summary-label,
+.driver-trip-detail-grid span,
+.driver-trip-item p {
+  color: #5b6888;
+}
+
+.driver-summary-label {
+  font-size: 0.88rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.driver-button-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.driver-button-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.driver-button-grid button,
+.driver-link-button {
+  min-height: 50px;
+}
+
+.driver-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  background: #eaf0ff;
+  color: #172033;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.driver-toast {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #eaf8ef;
+  color: #1d6b3d;
+  font-weight: 600;
+}
+
+.driver-trip-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.driver-trip-detail-grid div,
+.driver-trip-side {
+  display: grid;
+  gap: 4px;
+}
+
+.driver-trip-side {
+  justify-items: end;
+}
+
+.driver-mini-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #edf2ff;
+  color: #3657a6;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.driver-trip-list {
+  display: grid;
+  gap: 12px;
+}
+
+.driver-trip-item {
+  border: 1px solid #e6edff;
+  border-radius: 20px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.driver-trip-item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.driver-trip-item strong {
+  font-size: 1rem;
+}
+
+.driver-trip-item p {
+  margin: 6px 0 0;
+}
+
+.driver-selector-card {
+  padding: 18px 20px;
+}
+
+@media (max-width: 920px) {
+  .driver-summary-grid,
+  .driver-action-grid,
+  .driver-trip-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 14px;
+  }
+
+  .hero-card {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .card-grid,
+  .info-grid,
+  .form-grid,
+  .form-map-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tabs {
+    gap: 8px;
+  }
+
+  .tab {
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  .panel-card,
+  .info-card,
+  .table-card,
+  .form-card,
+  .driver-hero-card,
+  .driver-current-trip-card,
+  .driver-trip-list-card,
+  .driver-summary-card {
+    border-radius: 20px;
+  }
+
+  .driver-button-grid,
+  .driver-button-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .driver-trip-item-top,
+  .driver-card-header,
+  .driver-status-pill-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .driver-trip-side {
+    justify-items: start;
+  }
+
+  table {
+    min-width: 720px;
+  }
+}

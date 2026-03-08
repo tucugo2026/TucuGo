@@ -140,7 +140,7 @@ export default function App() {
       case 'passenger':
         return <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
       case 'driver':
-        return <DriverPanel cities={cities} drivers={drivers} trips={trips} refreshAll={refreshAll} />;
+        return <DriverPanel cities={cities} drivers={drivers} trips={trips} refreshAll={refreshAll} profile={profile} />;
       case 'model':
         return profile?.rol === 'admin' ? <DataModelPanel /> : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
       case 'users':
