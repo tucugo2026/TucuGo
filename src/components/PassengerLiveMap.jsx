@@ -1,34 +1,24 @@
-import { MapContainer, TileLayer, Marker, Polyline, Popup } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 
-export default function PassengerLiveMap({
-  passenger,
-  driver,
-  destination
-}) {
-
+export default function PassengerLiveMap({ passenger, driver, destination }) {
   const center = passenger || { lat: -26.8241, lng: -65.2226 };
 
-  const driverPosition = driver?.ubicacion
-    ? [driver.ubicacion.lat, driver.ubicacion.lng]
-    : null;
+  const driverPosition =
+    driver?.ubicacion?.lat != null && driver?.ubicacion?.lng != null
+      ? [driver.ubicacion.lat, driver.ubicacion.lng]
+      : null;
 
-  const passengerPosition = passenger
-    ? [passenger.lat, passenger.lng]
-    : null;
-
-  const destinationPosition = destination
-    ? [destination.lat, destination.lng]
-    : null;
+  const passengerPosition = passenger ? [passenger.lat, passenger.lng] : null;
+  const destinationPosition = destination ? [destination.lat, destination.lng] : null;
 
   return (
     <MapContainer
       center={[center.lat, center.lng]}
       zoom={14}
       scrollWheelZoom={true}
-      style={{ height: "420px", width: "100%" }}
+      style={{ height: '420px', width: '100%', borderRadius: '16px' }}
     >
-
       <TileLayer
         attribution="OpenStreetMap"
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -55,10 +45,9 @@ export default function PassengerLiveMap({
       {driverPosition && passengerPosition && (
         <Polyline
           positions={[driverPosition, passengerPosition]}
-          pathOptions={{ color: "blue" }}
+          pathOptions={{ color: 'blue' }}
         />
       )}
-
     </MapContainer>
   );
 }
