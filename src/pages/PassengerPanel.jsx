@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import MapView from '../components/MapView.jsx';
 import { SUPPORTED_PAYMENT_METHODS } from '../config/appConfig.js';
-import { getBrowserPosition, estimateDurationMinutes, findNearestAvailableDriver, haversineKm } from '../services/geo.js';
+import {
+  getBrowserPosition,
+  estimateDurationMinutes,
+  findNearestAvailableDriver,
+  haversineKm
+} from '../services/geo.js';
 import { calculatePrice, formatMoney } from '../services/pricing.js';
 import { createTrip } from '../services/tripService.js';
 
@@ -13,6 +18,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
   const [destinationText, setDestinationText] = useState('Ingenio Leales');
   const [paymentMethod, setPaymentMethod] = useState('Transferencia');
   const [notes, setNotes] = useState('Viaje demo');
+  const [serviceType, setServiceType] = useState('auto');
   const [position, setPosition] = useState(null);
   const [destinationOffsetKm, setDestinationOffsetKm] = useState(6);
   const [message, setMessage] = useState('');
@@ -33,6 +39,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
   const destinationPoint = useMemo(() => {
     if (!position) return null;
+
     return {
       lat: Number(position.lat) + Number(destinationOffsetKm) * 0.01,
       lng: Number(position.lng) + Number(destinationOffsetKm) * 0.006,
@@ -45,13 +52,16 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
     const distanceKm = haversineKm(position, destinationPoint);
     const durationMin = estimateDurationMinutes(distanceKm);
+
+    const multiplier = serviceType === 'moto' ? 0.85 : 1;
+
     const price = calculatePrice({
-      baseFare: city.baseFare,
-      priceKm: city.priceKm,
-      priceMinute: city.priceMinute,
+      baseFare: city.baseFare * multiplier,
+      priceKm: city.priceKm * multiplier,
+      priceMinute: city.priceMinute * multiplier,
       distanceKm,
       durationMin,
-      minimumFare: city.baseFare
+      minimumFare: city.baseFare * multiplier
     });
 
     return {
@@ -60,19 +70,36 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
       price,
       formatted: formatMoney(price, city.currency)
     };
-  }, [city, position, destinationPoint]);
+  }, [city, position, destinationPoint, serviceType]);
+
+  const compatibleDrivers = useMemo(() => {
+    return drivers.filter((item) => {
+      if (item.city !== selectedCity) return false;
+
+      const driverVehicleType =
+        (item.vehicleType || item.vehiculoTipo || item.tipoVehiculo || '')
+          .toString()
+          .toLowerCase();
+
+      if (!driverVehicleType) return true;
+
+      return driverVehicleType === serviceType;
+    });
+  }, [drivers, selectedCity, serviceType]);
 
   const nearestDriver = useMemo(() => {
     if (!position) return null;
+
     return findNearestAvailableDriver({
-      drivers,
+      drivers: compatibleDrivers,
       city: selectedCity,
       origin: position
     });
-  }, [drivers, selectedCity, position]);
+  }, [compatibleDrivers, selectedCity, position]);
 
   async function useCurrentLocation() {
     if (!city) return;
+
     const current = await getBrowserPosition(city.center);
     setPosition(current);
     setMessage('Ubicación actualizada desde el navegador.');
@@ -89,22 +116,39 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
         country: city.country,
         city: city.id,
         currency: city.currency,
+
         originText,
         originLat: position.lat,
         originLng: position.lng,
+
         destinationText,
         destinationLat: destinationPoint.lat,
         destinationLng: destinationPoint.lng,
+
         estimatedDistanceKm: estimate.distanceKm,
         estimatedDurationMin: estimate.durationMin,
         price: estimate.price,
+
         paymentMethod,
         notes,
-        cryptoWallet: paymentMethod === 'USDC' || paymentMethod === 'USDT' || paymentMethod === 'BTC' ? 'wallet-demo-001' : '',
+
+        serviceType,
+        vehicleTypeRequested: serviceType,
+        tripType: serviceType,
+
+        cryptoWallet:
+          paymentMethod === 'USDC' ||
+          paymentMethod === 'USDT' ||
+          paymentMethod === 'BTC'
+            ? 'wallet-demo-001'
+            : '',
         cryptoTxId: ''
       });
 
-      setMessage('Viaje creado correctamente. Ahora puedes asignarlo desde Admin o aceptarlo desde Conductor.');
+      setMessage(
+        `Viaje creado correctamente en modo ${serviceType === 'auto' ? 'Auto' : 'Moto'}.`
+      );
+
       await refreshAll();
     } catch (error) {
       setMessage(`No se pudo crear el viaje: ${error.message}`);
@@ -119,7 +163,10 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
           <label>
             Ciudad
-            <select value={selectedCity} onChange={(event) => setSelectedCity(event.target.value)}>
+            <select
+              value={selectedCity}
+              onChange={(event) => setSelectedCity(event.target.value)}
+            >
               {cities.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -130,22 +177,45 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
           <label>
             Pasajero
-            <input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} />
+            <input
+              value={passengerName}
+              onChange={(event) => setPassengerName(event.target.value)}
+            />
           </label>
 
           <label>
             Teléfono
-            <input value={passengerPhone} onChange={(event) => setPassengerPhone(event.target.value)} />
+            <input
+              value={passengerPhone}
+              onChange={(event) => setPassengerPhone(event.target.value)}
+            />
+          </label>
+
+          <label>
+            Tipo de viaje
+            <select
+              value={serviceType}
+              onChange={(event) => setServiceType(event.target.value)}
+            >
+              <option value="auto">Auto</option>
+              <option value="moto">Moto</option>
+            </select>
           </label>
 
           <label>
             Origen
-            <input value={originText} onChange={(event) => setOriginText(event.target.value)} />
+            <input
+              value={originText}
+              onChange={(event) => setOriginText(event.target.value)}
+            />
           </label>
 
           <label>
             Destino
-            <input value={destinationText} onChange={(event) => setDestinationText(event.target.value)} />
+            <input
+              value={destinationText}
+              onChange={(event) => setDestinationText(event.target.value)}
+            />
           </label>
 
           <label>
@@ -161,7 +231,10 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
           <label>
             Método de pago
-            <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+            <select
+              value={paymentMethod}
+              onChange={(event) => setPaymentMethod(event.target.value)}
+            >
               {SUPPORTED_PAYMENT_METHODS.map((method) => (
                 <option key={method} value={method}>
                   {method}
@@ -172,26 +245,45 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
           <label>
             Notas
-            <textarea rows="3" value={notes} onChange={(event) => setNotes(event.target.value)} />
+            <textarea
+              rows="3"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
           </label>
 
           <div className="button-row">
-            <button type="button" onClick={useCurrentLocation}>Usar mi ubicación</button>
-            <button type="submit" className="primary-button">Crear viaje</button>
+            <button type="button" onClick={useCurrentLocation}>
+              Usar mi ubicación
+            </button>
+            <button type="submit" className="primary-button">
+              Crear viaje
+            </button>
           </div>
 
-          <p className="helper-text">{message || 'Puedes usar OpenStreetMap sin pagar claves para el mapa base.'}</p>
+          <p className="helper-text">
+            {message || 'Puedes usar OpenStreetMap sin pagar claves para el mapa base.'}
+          </p>
         </form>
 
         <div className="stack-md">
-          <MapView center={city?.center ?? { lat: -26.8241, lng: -65.2226 }} passenger={position} destination={destinationPoint} drivers={drivers.filter((item) => item.city === selectedCity)} />
+          <MapView
+            center={city?.center ?? { lat: -26.8241, lng: -65.2226 }}
+            passenger={position}
+            destination={destinationPoint}
+            drivers={compatibleDrivers}
+          />
 
           <div className="info-grid">
             <article className="info-card highlight">
               <h2>Precio estimado</h2>
-              <strong className="big-number">{estimate ? estimate.formatted : '—'}</strong>
+              <strong className="big-number">
+                {estimate ? estimate.formatted : '—'}
+              </strong>
               <p>
-                Distancia: {estimate ? `${estimate.distanceKm} km` : '—'} · Tiempo: {estimate ? `${estimate.durationMin} min` : '—'}
+                Tipo: {serviceType === 'auto' ? 'Auto' : 'Moto'} · Distancia:{' '}
+                {estimate ? `${estimate.distanceKm} km` : '—'} · Tiempo:{' '}
+                {estimate ? `${estimate.durationMin} min` : '—'}
               </p>
             </article>
 
@@ -201,10 +293,25 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
                 <>
                   <strong>{nearestDriver.name}</strong>
                   <p>{nearestDriver.vehicle}</p>
-                  <p>Aprox. {nearestDriver.distanceKm.toFixed(2)} km del pasajero.</p>
+                  <p>
+                    Tipo:{' '}
+                    {(nearestDriver.vehicleType ||
+                      nearestDriver.vehiculoTipo ||
+                      nearestDriver.tipoVehiculo ||
+                      serviceType ||
+                      '-')
+                      .toString()}
+                  </p>
+                  <p>
+                    Aprox. {nearestDriver.distanceKm.toFixed(2)} km del pasajero.
+                  </p>
                 </>
               ) : (
-                <p>No hay conductores disponibles en esta ciudad.</p>
+                <p>
+                  No hay conductores disponibles para{' '}
+                  <strong>{serviceType === 'auto' ? 'Auto' : 'Moto'}</strong> en
+                  esta ciudad.
+                </p>
               )}
             </article>
           </div>

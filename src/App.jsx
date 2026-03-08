@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Header from './components/Header.jsx';
 import DashboardCards from './components/DashboardCards.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
+import AdminMapPage from './pages/AdminMapPage.jsx';
 import PassengerPanel from './pages/PassengerPanel.jsx';
 import ConductorPanel from './pages/conductor/ConductorPanel.jsx';
 import DataModelPanel from './pages/DataModelPanel.jsx';
@@ -17,6 +18,7 @@ import { getUserProfile, logoutUser, subscribeAuth } from './services/authServic
 const tabsByRole = {
   admin: [
     { id: 'admin', label: 'Admin' },
+    { id: 'map', label: 'Mapa en vivo' },
     { id: 'passenger', label: 'Pasajero' },
     { id: 'driver', label: 'Conductor' },
     { id: 'model', label: 'Modelo Firestore' },
@@ -31,7 +33,6 @@ const tabsByRole = {
 };
 
 export default function App() {
-
   const [activeTab, setActiveTab] = useState('admin');
   const [cities, setCities] = useState([]);
   const [drivers, setDrivers] = useState([]);
@@ -70,19 +71,15 @@ export default function App() {
   }
 
   useEffect(() => {
-
     let unsubscribeTrips = () => {};
     let unsubscribeAuth = () => {};
 
     async function boot() {
-
       try {
-
         setLoading(true);
         setBootMessage('Preparando TucuGo...');
 
         await initAnalytics().catch(() => null);
-
         await seedBaseData().catch(() => null);
 
         await refreshAll();
@@ -97,20 +94,13 @@ export default function App() {
         });
 
         setBootMessage(
-          USE_FIRESTORE
-            ? 'Conectado a Firebase.'
-            : 'Modo demo local activo.'
+          USE_FIRESTORE ? 'Conectado a Firebase.' : 'Modo demo local activo.'
         );
-
       } catch (error) {
-
         console.error(error);
         setBootMessage(`Error al iniciar: ${error.message}`);
-
       } finally {
-
         setLoading(false);
-
       }
     }
 
@@ -123,7 +113,6 @@ export default function App() {
       unsubscribeTrips();
       unsubscribeAuth();
     };
-
   }, []);
 
   const tabs = tabsByRole[profile?.rol || 'pasajero'];
@@ -143,7 +132,6 @@ export default function App() {
   }
 
   const content = useMemo(() => {
-
     if (!firebaseReady) {
       return <div className="panel-card">Cargando autenticación...</div>;
     }
@@ -152,8 +140,16 @@ export default function App() {
       return <AuthPage cities={cities} onAuthResolved={resolveUser} />;
     }
 
-    switch (activeTab) {
+    if (profile?.rol === 'conductor' && profile?.aprobado === false) {
+      return (
+        <div className="info-card">
+          <h2>Cuenta de conductor pendiente</h2>
+          <p>Tu cuenta está creada, pero todavía necesita aprobación de un admin para entrar al panel de conductor.</p>
+        </div>
+      );
+    }
 
+    switch (activeTab) {
       case 'passenger':
         return (
           <PassengerPanel
@@ -172,6 +168,11 @@ export default function App() {
           />
         );
 
+      case 'map':
+        return profile?.rol === 'admin'
+          ? <AdminMapPage />
+          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+
       case 'model':
         return profile?.rol === 'admin'
           ? <DataModelPanel />
@@ -188,7 +189,6 @@ export default function App() {
           ? <AdminPanel cities={cities} drivers={drivers} trips={trips} refreshAll={refreshAll} />
           : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
     }
-
   }, [firebaseReady, authUser, activeTab, profile, cities, drivers, trips]);
 
   return (
@@ -210,11 +210,8 @@ export default function App() {
       ) : null}
 
       <div className="app-shell">
-
         <Header title={APP_NAME} subtitle={APP_SUBTITLE} />
-
         <DashboardCards stats={stats} />
-
         <InstallPrompt />
 
         <div className="boot-banner">
@@ -223,18 +220,18 @@ export default function App() {
         </div>
 
         {authUser && profile ? (
-          <div style={{display:"flex",justifyContent:"flex-end",gap:"10px"}}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
             <UserMenu profile={profile} onLogout={handleLogout} />
             <button
               onClick={handleLogout}
               style={{
-                background:"#ef4444",
-                color:"white",
-                border:"none",
-                padding:"8px 14px",
-                borderRadius:"8px",
-                cursor:"pointer",
-                fontWeight:"bold"
+                background: '#ef4444',
+                color: 'white',
+                border: 'none',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
               }}
             >
               Salir
@@ -256,10 +253,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <main className="panel-card">
-          {content}
-        </main>
-
+        <main className="panel-card">{content}</main>
       </div>
     </>
   );
