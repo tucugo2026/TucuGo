@@ -1,88 +1,176 @@
 import {
   createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
   signInWithEmailAndPassword,
-  signOut
-} from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
-import { auth, db } from './firebase.js';
-
-const USERS_COLLECTION = 'usuarios';
-
-export function subscribeAuth(callback) {
-  return onAuthStateChanged(auth, callback);
-}
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged
+} from "firebase/auth";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp
+} from "firebase/firestore";
+import { auth, db } from "./firebase.js";
 
 export async function loginUser(email, password) {
-  const credential = await signInWithEmailAndPassword(auth, email, password);
-  return credential.user;
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  return userCredential.user;
 }
 
-export async function logoutUser() {
-  await signOut(auth);
-}
+export async function registerUser({
+  name,
+  email,
+  password,
+  role,
+  city,
+  phone = "",
+  vehicleType = "",
+  licensePlate = ""
+}) {
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  const user = userCredential.user;
 
-export async function registerUser({ name, email, password, role, city }) {
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
-  const user = credential.user;
+  const now = new Date();
+  const freeMonthEnd = new Date();
+  freeMonthEnd.setDate(now.getDate() + 30);
 
-  const needsApproval = role === 'conductor';
-
-  await setDoc(doc(db, USERS_COLLECTION, user.uid), {
+  const perfilBase = {
     uid: user.uid,
     nombre: name,
     email,
     rol: role,
     ciudad: city,
-    activo: !needsApproval,
-    aprobado: role === 'conductor' ? false : true,
-    estadoSolicitud: role === 'conductor' ? 'pendiente' : 'activo',
-    creadoEn: serverTimestamp()
-  });
+    telefono: phone,
+    aprobado: role === "conductor" ? false : true,
+    creado: serverTimestamp(),
+    createdAt: now.toISOString()
+  };
+
+  await setDoc(doc(db, "usuarios", user.uid), perfilBase);
+
+  if (role === "conductor") {
+    await setDoc(doc(db, "conductores", user.uid), {
+      uid: user.uid,
+      nombre: name,
+      email,
+      telefono: phone,
+      city,
+      ciudad: city,
+
+      estado: "pendiente",
+      status: "pendiente",
+      aprobado: false,
+
+      vehicleType: vehicleType || "",
+      vehiculoTipo: vehicleType || "",
+      tipoVehiculo: vehicleType || "",
+
+      patente: licensePlate || "",
+
+      fechaRegistro: now.toISOString(),
+      finPeriodoGratis: freeMonthEnd.toISOString(),
+
+      suscripcionActiva: true,
+      planActivo: true,
+      plan: "trial",
+      planMensualUSD: 3,
+      ultimoPago: null,
+
+      viajeActualId: "",
+      ubicacion: null,
+
+      createdAt: serverTimestamp(),
+      actualizadoEn: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  }
 
   return user;
 }
 
-export async function getUserProfile(uid) {
-  const snapshot = await getDoc(doc(db, USERS_COLLECTION, uid));
-  if (!snapshot.exists()) return null;
-  return snapshot.data();
-}
-
 export async function resetPassword(email) {
-  await sendPasswordResetEmail(auth, email);
+  return sendPasswordResetEmail(auth, email);
 }
 
-export async function listUsers() {
-  const snapshot = await getDocs(collection(db, USERS_COLLECTION));
-  return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+export async function logoutUser() {
+  return signOut(auth);
 }
 
-export async function listPendingDrivers() {
-  const q = query(
-    collection(db, USERS_COLLECTION),
-    where('rol', '==', 'conductor'),
-    where('aprobado', '==', false)
-  );
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+export function subscribeAuth(callback) {
+  return onAuthStateChanged(auth, callback);
+}
+
+export async function getUserProfile(uid) {
+  if (!uid) return null;
+
+  const userRef = doc(db, "usuarios", uid);
+  const userSnap = await getDoc(userRef);
+
+  if (!userSnap.exists()) return null;
+
+  const profile = {
+    id: userSnap.id,
+    uid,
+    ...userSnap.data()
+  };
+
+  if (profile.rol === "conductor") {
+    const conductorRef = doc(db, "conductores", uid);
+    const conductorSnap = await getDoc(conductorRef);
+
+    if (conductorSnap.exists()) {
+      return {
+        ...profile,
+        ...conductorSnap.data(),
+        id: conductorSnap.id,
+        uid
+      };
+    }
+  }
+
+  return profile;
 }
 
 export async function approveDriver(uid) {
-  await updateDoc(doc(db, USERS_COLLECTION, uid), {
+  if (!uid) throw new Error("UID requerido");
+
+  await updateDoc(doc(db, "usuarios", uid), {
+    aprobado: true
+  });
+
+  await updateDoc(doc(db, "conductores", uid), {
     aprobado: true,
-    activo: true,
-    estadoSolicitud: 'activo'
+    estado: "disponible",
+    status: "disponible",
+    actualizadoEn: serverTimestamp(),
+    updatedAt: serverTimestamp()
   });
 }
 
-export async function updateUserRole(uid, role) {
-  const approved = role === 'conductor' ? false : true;
-  await updateDoc(doc(db, USERS_COLLECTION, uid), {
-    rol: role,
-    aprobado: approved,
-    activo: role === 'conductor' ? false : true,
-    estadoSolicitud: role === 'conductor' ? 'pendiente' : 'activo'
+export async function rejectDriver(uid) {
+  if (!uid) throw new Error("UID requerido");
+
+  await updateDoc(doc(db, "usuarios", uid), {
+    aprobado: false
+  });
+
+  await updateDoc(doc(db, "conductores", uid), {
+    aprobado: false,
+    estado: "rechazado",
+    status: "rechazado",
+    actualizadoEn: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function updateDriverSubscription(uid, data = {}) {
+  if (!uid) throw new Error("UID requerido");
+
+  await updateDoc(doc(db, "conductores", uid), {
+    ...data,
+    actualizadoEn: serverTimestamp(),
+    updatedAt: serverTimestamp()
   });
 }

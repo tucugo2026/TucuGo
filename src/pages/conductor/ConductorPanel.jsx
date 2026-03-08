@@ -11,6 +11,7 @@ import {
 import { db } from '../../services/firebase.js';
 import { haversineKm } from '../../services/geo.js';
 import RatingStars from '../../components/RatingStars.jsx';
+import { conductorPuedeTrabajar } from '../../services/subscriptionService.js';
 import './ConductorPanel.css';
 
 function buildOsrmUrl(start, end) {
@@ -258,6 +259,7 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
   const estado = conductor?.estado || conductor?.status || 'pendiente';
   const vehiculo = conductor?.vehiculo || conductor?.vehiculoNombre || conductor?.vehicleType || '-';
   const patente = conductor?.patente || '-';
+  const puedeTrabajar = conductorPuedeTrabajar(conductor);
 
   const conductorVehicleType = (
     conductor?.vehicleType ||
@@ -492,6 +494,11 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
 
   async function aceptarViaje(trip) {
     try {
+      if (!puedeTrabajar) {
+        alert('Tu suscripción está vencida');
+        return;
+      }
+
       if (viajeActual && viajeActual.estado !== 'finalizado' && viajeActual.estado !== 'cancelado') {
         alert('Ya tienes un viaje activo. Finalízalo o cancélalo antes de aceptar otro.');
         return;
@@ -655,6 +662,22 @@ export default function ConductorPanel({ profile, trips, refreshAll }) {
         <h1>Panel del conductor</h1>
         <p>Uso desde celular</p>
       </header>
+
+      {!puedeTrabajar && (
+        <div
+          style={{
+            background: '#fee2e2',
+            padding: '15px',
+            borderRadius: '12px',
+            marginBottom: '15px'
+          }}
+        >
+          <h3>Suscripción vencida</h3>
+          <p>Tu período gratuito terminó.</p>
+          <p>Para seguir trabajando debes pagar el plan mensual.</p>
+          <b>Costo: 3 USD</b>
+        </div>
+      )}
 
       <section className="conductor-card principal">
         <h2>{nombre}</h2>
