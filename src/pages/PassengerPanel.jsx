@@ -473,10 +473,21 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
 
     const numero = limpiarTelefono(phone);
-    const texto = encodeURIComponent(
-      `Hola, soy ${passengerName}. Te escribo por el viaje en TucuGo.`
-    );
+    const status = myLatestTrip?.estado || myLatestTrip?.status || '';
 
+    let textoBase = `Hola, soy ${passengerName}. Te escribo por el viaje en TucuGo.`;
+
+    if (status === 'aceptado') {
+      textoBase = `Hola, soy ${passengerName}. Vi que aceptaste mi viaje en TucuGo.`;
+    } else if (status === 'en_camino') {
+      textoBase = `Hola, soy ${passengerName}. Vi que vienes en camino por mi viaje en TucuGo.`;
+    } else if (status === 'llegue') {
+      textoBase = `Hola, soy ${passengerName}. Ya vi que llegaste al punto de recogida en TucuGo.`;
+    } else if (status === 'en_viaje') {
+      textoBase = `Hola, soy ${passengerName}. Te escribo por el viaje que estamos realizando en TucuGo.`;
+    }
+
+    const texto = encodeURIComponent(textoBase);
     window.open(`https://wa.me/${numero}?text=${texto}`, '_blank');
   }
 
