@@ -1,141 +1,245 @@
-import { useMemo, useState } from 'react';
-import TableCard from '../components/TableCard.jsx';
-import { seedBaseData, assignNearestDriverToTrip, deleteTrip, setTripStatus } from '../services/tripService.js';
-import { formatMoney } from '../services/pricing.js';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  collection,
+  onSnapshot
+} from 'firebase/firestore';
+import { db } from '../services/firebase.js';
 
-export default function AdminPanel({ cities, drivers, trips, refreshAll }) {
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+function formatDate(date) {
+  if (!date) return '-';
+  const d = new Date(date);
+  return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+}
 
-  const cityName = useMemo(() => Object.fromEntries(cities.map((city) => [city.id, city.name])), [cities]);
+function isToday(dateValue) {
+  if (!dateValue) return false;
+  const d = new Date(dateValue);
+  const now = new Date();
 
-  async function handleSeed() {
-    try {
-      setBusy(true);
-      setMessage('Cargando base inicial...');
-      await seedBaseData();
-      await refreshAll();
-      setMessage('Base inicial cargada correctamente.');
-    } catch (error) {
-      setMessage(`Error al sembrar datos: ${error.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
 
-  async function handleAssign(tripId) {
-    try {
-      setBusy(true);
-      const nearest = await assignNearestDriverToTrip(tripId);
-      setMessage(`Conductor asignado: ${nearest.name}`);
-      await refreshAll();
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+export default function AdminPanel() {
+  const [trips, setTrips] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [users, setUsers] = useState([]);
 
-  async function handleDelete(tripId) {
-    try {
-      setBusy(true);
-      await deleteTrip(tripId);
-      setMessage('Viaje eliminado.');
-      await refreshAll();
-    } catch (error) {
-      setMessage(`No se pudo eliminar: ${error.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => {
+    const unsubTrips = onSnapshot(collection(db, 'viajes'), (snap) => {
+      const rows = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTrips(rows);
+    });
 
-  async function handleTripStatus(tripId, status) {
-    try {
-      setBusy(true);
-      await setTripStatus(tripId, status);
-      setMessage(`Estado actualizado a ${status}.`);
-      await refreshAll();
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+    const unsubDrivers = onSnapshot(collection(db, 'conductores'), (snap) => {
+      const rows = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setDrivers(rows);
+    });
 
-  const tripRows = trips.map((trip) => ({
-    id: trip.id,
-    passenger: trip.passengerName,
-    city: cityName[trip.city] ?? trip.city,
-    origin: trip.originText,
-    destination: trip.destinationText,
-    driver: trip.driverName || 'Sin asignar',
-    payment: trip.paymentMethod,
-    status: trip.status,
-    price: formatMoney(trip.price, trip.currency)
-  }));
+    const unsubUsers = onSnapshot(collection(db, 'usuarios'), (snap) => {
+      const rows = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setUsers(rows);
+    });
 
-  const driverRows = drivers.map((driver) => ({
-    id: driver.id,
-    name: driver.name,
-    city: cityName[driver.city] ?? driver.city,
-    vehicle: driver.vehicle,
-    crypto: driver.acceptsCrypto ? 'Sí' : 'No',
-    status: driver.status
-  }));
+    return () => {
+      unsubTrips();
+      unsubDrivers();
+      unsubUsers();
+    };
+  }, []);
+
+  const stats = useMemo(() => {
+    const viajesHoy = trips.filter((trip) => isToday(trip.createdAt));
+    const viajesFinalizados = trips.filter((trip) => trip.estado === 'finalizado');
+    const viajesCancelados = trips.filter((trip) => trip.estado === 'cancelado');
+    const viajesActivos = trips.filter((trip) =>
+      ['solicitado', 'aceptado', 'en_camino', 'llegue', 'en_viaje'].includes(trip.estado)
+    );
+
+    const conductoresDisponibles = drivers.filter(
+      (driver) => (driver.estado || driver.status) === 'disponible'
+    );
+    const conductoresOcupados = drivers.filter(
+      (driver) => (driver.estado || driver.status) === 'ocupado'
+    );
+    const conductoresAprobados = drivers.filter(
+      (driver) => driver.aprobado === true || driver.aprobado === 'true'
+    );
+
+    const gananciaHoy = viajesHoy
+      .filter((trip) => trip.estado === 'finalizado')
+      .reduce((acc, trip) => acc + Number(trip.comisionApp || 0), 0);
+
+    const recaudacionHoy = viajesHoy
+      .filter((trip) => trip.estado === 'finalizado')
+      .reduce((acc, trip) => acc + Number(trip.price || 0), 0);
+
+    const comisionTotal = trips
+      .filter((trip) => trip.estado === 'finalizado')
+      .reduce((acc, trip) => acc + Number(trip.comisionApp || 0), 0);
+
+    const totalPagadoConductores = trips
+      .filter((trip) => trip.estado === 'finalizado')
+      .reduce((acc, trip) => acc + Number(trip.gananciaConductor || 0), 0);
+
+    return {
+      viajesHoy: viajesHoy.length,
+      viajesTotales: trips.length,
+      viajesActivos: viajesActivos.length,
+      viajesFinalizados: viajesFinalizados.length,
+      viajesCancelados: viajesCancelados.length,
+      conductoresTotales: drivers.length,
+      conductoresDisponibles: conductoresDisponibles.length,
+      conductoresOcupados: conductoresOcupados.length,
+      conductoresAprobados: conductoresAprobados.length,
+      usuariosTotales: users.length,
+      gananciaHoy,
+      recaudacionHoy,
+      comisionTotal,
+      totalPagadoConductores
+    };
+  }, [trips, drivers, users]);
+
+  const bestDrivers = useMemo(() => {
+    const map = new Map();
+
+    trips.forEach((trip) => {
+      const driverId = trip.conductorId || trip.driverId;
+      const driverName = trip.conductorNombre || trip.driverName || 'Sin nombre';
+
+      if (!driverId) return;
+      if (trip.estado !== 'finalizado') return;
+
+      if (!map.has(driverId)) {
+        map.set(driverId, {
+          id: driverId,
+          nombre: driverName,
+          viajes: 0,
+          total: 0,
+          comision: 0
+        });
+      }
+
+      const item = map.get(driverId);
+      item.viajes += 1;
+      item.total += Number(trip.gananciaConductor || 0);
+      item.comision += Number(trip.comisionApp || 0);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.viajes - a.viajes || b.total - a.total)
+      .slice(0, 5);
+  }, [trips]);
+
+  const recentTrips = useMemo(() => {
+    return [...trips]
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, 10);
+  }, [trips]);
 
   return (
     <div className="stack-lg">
       <section className="info-grid">
-        <article className="info-card">
-          <h2>Panel admin</h2>
-          <p>
-            Desde aquí puedes sembrar la base inicial, revisar viajes, asignar el conductor más cercano y cerrar viajes.
-          </p>
+        <article className="info-card highlight">
+          <h2>Ganancia de hoy</h2>
+          <strong className="big-number">${stats.gananciaHoy}</strong>
+          <p>Comisiones de viajes finalizados hoy</p>
         </article>
+
         <article className="info-card">
-          <h2>Estado</h2>
-          <p>{message || 'Listo para operar.'}</p>
-          <button className="primary-button" onClick={handleSeed} disabled={busy}>
-            {busy ? 'Procesando...' : 'Sembrar base inicial'}
-          </button>
+          <h2>Recaudación de hoy</h2>
+          <strong className="big-number">${stats.recaudacionHoy}</strong>
+          <p>Total cobrado en viajes finalizados hoy</p>
+        </article>
+
+        <article className="info-card">
+          <h2>Comisión total</h2>
+          <strong className="big-number">${stats.comisionTotal}</strong>
+          <p>Total histórico ganado por TucuGo</p>
+        </article>
+
+        <article className="info-card">
+          <h2>Pagado a conductores</h2>
+          <strong className="big-number">${stats.totalPagadoConductores}</strong>
+          <p>Total histórico para conductores</p>
         </article>
       </section>
 
-      <TableCard
-        title="Viajes"
-        columns={[
-          { key: 'passenger', label: 'Pasajero' },
-          { key: 'city', label: 'Ciudad' },
-          { key: 'origin', label: 'Origen' },
-          { key: 'destination', label: 'Destino' },
-          { key: 'driver', label: 'Conductor' },
-          { key: 'payment', label: 'Pago' },
-          { key: 'price', label: 'Precio' },
-          { key: 'status', label: 'Estado', type: 'status' }
-        ]}
-        rows={tripRows}
-        actions={(row) => (
-          <div className="action-stack">
-            <button onClick={() => handleAssign(row.id)}>Asignar cercano</button>
-            <button onClick={() => handleTripStatus(row.id, 'en_camino')}>En camino</button>
-            <button onClick={() => handleTripStatus(row.id, 'en_viaje')}>En viaje</button>
-            <button onClick={() => handleTripStatus(row.id, 'finalizado')}>Finalizar</button>
-            <button className="danger-button" onClick={() => handleDelete(row.id)}>Eliminar</button>
-          </div>
-        )}
-      />
+      <section className="info-grid">
+        <article className="info-card">
+          <h2>Viajes</h2>
+          <p><b>Hoy:</b> {stats.viajesHoy}</p>
+          <p><b>Totales:</b> {stats.viajesTotales}</p>
+          <p><b>Activos:</b> {stats.viajesActivos}</p>
+          <p><b>Finalizados:</b> {stats.viajesFinalizados}</p>
+          <p><b>Cancelados:</b> {stats.viajesCancelados}</p>
+        </article>
 
-      <TableCard
-        title="Conductores"
-        columns={[
-          { key: 'name', label: 'Nombre' },
-          { key: 'city', label: 'Ciudad' },
-          { key: 'vehicle', label: 'Vehículo' },
-          { key: 'crypto', label: 'Cripto' },
-          { key: 'status', label: 'Estado', type: 'status' }
-        ]}
-        rows={driverRows}
-      />
+        <article className="info-card">
+          <h2>Conductores</h2>
+          <p><b>Totales:</b> {stats.conductoresTotales}</p>
+          <p><b>Aprobados:</b> {stats.conductoresAprobados}</p>
+          <p><b>Disponibles:</b> {stats.conductoresDisponibles}</p>
+          <p><b>Ocupados:</b> {stats.conductoresOcupados}</p>
+        </article>
+
+        <article className="info-card">
+          <h2>Usuarios</h2>
+          <p><b>Totales:</b> {stats.usuariosTotales}</p>
+          <p><b>Pasajeros + Admins:</b> {stats.usuariosTotales}</p>
+        </article>
+      </section>
+
+      <section className="stack-md">
+        <h2>Mejores conductores</h2>
+
+        {bestDrivers.length === 0 ? (
+          <p>No hay viajes finalizados todavía.</p>
+        ) : (
+          bestDrivers.map((driver, index) => (
+            <div key={driver.id} className="info-card">
+              <p><b>#{index + 1}</b> {driver.nombre}</p>
+              <p><b>Viajes finalizados:</b> {driver.viajes}</p>
+              <p><b>Ganancia conductor:</b> ${driver.total}</p>
+              <p><b>Comisión generada:</b> ${driver.comision}</p>
+            </div>
+          ))
+        )}
+      </section>
+
+      <section className="stack-md">
+        <h2>Últimos viajes</h2>
+
+        {recentTrips.length === 0 ? (
+          <p>No hay viajes todavía.</p>
+        ) : (
+          recentTrips.map((trip) => (
+            <div key={trip.id} className="info-card">
+              <p><b>Pasajero:</b> {trip.passengerName || '-'}</p>
+              <p><b>Conductor:</b> {trip.conductorNombre || '-'}</p>
+              <p><b>Origen:</b> {trip.originText || '-'}</p>
+              <p><b>Destino:</b> {trip.destinationText || '-'}</p>
+              <p><b>Estado:</b> {trip.estado || '-'}</p>
+              <p><b>Precio:</b> ${trip.price || 0}</p>
+              <p><b>Comisión app:</b> ${trip.comisionApp || 0}</p>
+              <p><b>Ganancia conductor:</b> ${trip.gananciaConductor || 0}</p>
+              <p><b>Fecha:</b> {formatDate(trip.createdAt)}</p>
+            </div>
+          ))
+        )}
+      </section>
     </div>
   );
 }
