@@ -1,386 +1,279 @@
 import { useEffect, useMemo, useState } from 'react';
-import MapView from '../components/MapView.jsx';
-import { SUPPORTED_PAYMENT_METHODS } from '../config/appConfig.js';
 import {
-  getBrowserPosition,
-  estimateDurationMinutes,
-  findNearestAvailableDriver,
-  haversineKm
-} from '../services/geo.js';
-import { calculatePrice, formatMoney } from '../services/pricing.js';
-import { createTrip } from '../services/tripService.js';
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  CircleMarker,
+  Polyline,
+  useMap
+} from 'react-leaflet';
+import { collection, onSnapshot } from 'firebase/firestore';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import icon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import icon from 'leaflet/dist/images/marker-icon.png';
+import shadow from 'leaflet/dist/images/marker-shadow.png';
+import { db } from '../services/firebase.js';
+import './AdminMapPage.css';
 
-export default function PassengerPanel({ cities, drivers, refreshAll }) {
-  const [selectedCity, setSelectedCity] = useState(cities[0]?.id || 'tucuman');
-  const [passengerName, setPassengerName] = useState('Marcelo');
-  const [passengerPhone, setPassengerPhone] = useState('+543810000000');
-  const [originText, setOriginText] = useState('Mi ubicación actual');
-  const [destinationText, setDestinationText] = useState('Ingenio Leales');
-  const [paymentMethod, setPaymentMethod] = useState('Transferencia');
-  const [notes, setNotes] = useState('Viaje demo');
-  const [serviceType, setServiceType] = useState('auto');
-  const [position, setPosition] = useState(null);
-  const [destinationOffsetKm, setDestinationOffsetKm] = useState(6);
-  const [message, setMessage] = useState('');
+delete L.Icon.Default.prototype._getIconUrl;
 
-  const city = useMemo(
-    () => cities.find((item) => item.id === selectedCity) ?? cities[0],
-    [cities, selectedCity]
-  );
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: icon2x,
+  iconUrl: icon,
+  shadowUrl: shadow
+});
+
+const CENTRO_TUCUMAN = [-26.8241, -65.2226];
+
+function esNumero(valor) {
+  return typeof valor === 'number' && !Number.isNaN(valor);
+}
+
+function obtenerCoordConductor(conductor) {
+  const lat = conductor?.ubicacion?.lat;
+  const lng = conductor?.ubicacion?.lng;
+
+  if (esNumero(lat) && esNumero(lng)) {
+    return [lat, lng];
+  }
+
+  return null;
+}
+
+function obtenerCoordViaje(viaje) {
+  const lat = viaje?.originLat ?? viaje?.origenLat ?? viaje?.pickupLat ?? viaje?.lat;
+  const lng = viaje?.originLng ?? viaje?.origenLng ?? viaje?.pickupLng ?? viaje?.lng;
+
+  if (esNumero(lat) && esNumero(lng)) {
+    return [lat, lng];
+  }
+
+  return null;
+}
+
+function colorViaje(estado) {
+  switch (estado) {
+    case 'solicitado':
+      return '#f59e0b';
+    case 'aceptado':
+      return '#2563eb';
+    case 'en_camino':
+      return '#7c3aed';
+    case 'en_viaje':
+      return '#059669';
+    case 'finalizado':
+      return '#10b981';
+    case 'cancelado':
+      return '#ef4444';
+    default:
+      return '#6b7280';
+  }
+}
+
+function AutoCenter({ conductores }) {
+  const map = useMap();
 
   useEffect(() => {
-    async function loadPosition() {
-      if (!city) return;
-      const current = await getBrowserPosition(city.center);
-      setPosition(current);
+    if (!conductores.length) return;
+
+    const puntos = conductores
+      .map((c) => obtenerCoordConductor(c))
+      .filter(Boolean);
+
+    if (!puntos.length) return;
+
+    if (puntos.length === 1) {
+      map.setView(puntos[0], 14, { animate: true });
+      return;
     }
-    loadPosition();
-  }, [city]);
 
-  const destinationPoint = useMemo(() => {
-    if (!position) return null;
+    const bounds = L.latLngBounds(puntos);
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }, [conductores, map]);
 
-    return {
-      lat: Number(position.lat) + Number(destinationOffsetKm) * 0.01,
-      lng: Number(position.lng) + Number(destinationOffsetKm) * 0.006,
-      text: destinationText
+  return null;
+}
+
+export default function AdminMapPage() {
+  const [conductores, setConductores] = useState([]);
+  const [viajes, setViajes] = useState([]);
+
+  useEffect(() => {
+    const unsubConductores = onSnapshot(collection(db, 'conductores'), (snap) => {
+      const rows = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setConductores(rows);
+    });
+
+    const unsubViajes = onSnapshot(collection(db, 'viajes'), (snap) => {
+      const rows = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setViajes(rows);
+    });
+
+    return () => {
+      unsubConductores();
+      unsubViajes();
     };
-  }, [position, destinationOffsetKm, destinationText]);
+  }, []);
 
-  const estimate = useMemo(() => {
-    if (!city || !position || !destinationPoint) return null;
+  const conductoresConGps = useMemo(() => {
+    return conductores.filter((c) => obtenerCoordConductor(c));
+  }, [conductores]);
 
-    const distanceKm = haversineKm(position, destinationPoint);
-    const durationMin = estimateDurationMinutes(distanceKm);
+  const viajesConGps = useMemo(() => {
+    return viajes.filter((v) => obtenerCoordViaje(v));
+  }, [viajes]);
 
-    const multiplier = serviceType === 'moto' ? 0.85 : 1;
-
-    const price = calculatePrice({
-      baseFare: city.baseFare * multiplier,
-      priceKm: city.priceKm * multiplier,
-      priceMinute: city.priceMinute * multiplier,
-      distanceKm,
-      durationMin,
-      minimumFare: city.baseFare * multiplier
-    });
-
-    return {
-      distanceKm: Number(distanceKm.toFixed(2)),
-      durationMin,
-      price,
-      formatted: formatMoney(price, city.currency)
-    };
-  }, [city, position, destinationPoint, serviceType]);
-
-  const compatibleDrivers = useMemo(() => {
-    return drivers.filter((item) => {
-      const driverCity = item.city || item.ciudad || '';
-      if (driverCity !== selectedCity) return false;
-
-      const driverStatus = (item.estado || item.status || '').toString().toLowerCase();
-      if (driverStatus && driverStatus !== 'disponible') return false;
-
-      const approvedRaw = item.aprobado;
-      const approved =
-        approvedRaw === true ||
-        approvedRaw === 'true' ||
-        approvedRaw === undefined;
-
-      if (!approved) return false;
-
-      const driverVehicleType =
-        (item.vehicleType || item.vehiculoTipo || item.tipoVehiculo || '')
-          .toString()
-          .toLowerCase();
-
-      if (!driverVehicleType) return true;
-
-      return driverVehicleType === serviceType;
-    });
-  }, [drivers, selectedCity, serviceType]);
-
-  const nearestDriver = useMemo(() => {
-    if (!position) return null;
-
-    return findNearestAvailableDriver({
-      drivers: compatibleDrivers,
-      city: selectedCity,
-      origin: position
-    });
-  }, [compatibleDrivers, selectedCity, position]);
-
-  async function useCurrentLocation() {
-    if (!city) return;
-
-    const current = await getBrowserPosition(city.center);
-    setPosition(current);
-    setMessage('Ubicación actualizada desde el navegador.');
-  }
-
-  async function handleRequestTrip(event) {
-    event.preventDefault();
-
-    if (!city || !position || !destinationPoint || !estimate) return;
-
-    try {
-      const assignedDriver = nearestDriver || null;
-
-      const tripPayload = {
-        passengerName,
-        passengerPhone,
-        country: city.country,
-        city: city.id,
-        currency: city.currency,
-
-        originText,
-        originLat: position.lat,
-        originLng: position.lng,
-
-        destinationText,
-        destinationLat: destinationPoint.lat,
-        destinationLng: destinationPoint.lng,
-
-        estimatedDistanceKm: estimate.distanceKm,
-        estimatedDurationMin: estimate.durationMin,
-        price: estimate.price,
-
-        paymentMethod,
-        notes,
-
-        serviceType,
-        vehicleTypeRequested: serviceType,
-        tripType: serviceType,
-
-        estado: assignedDriver ? 'aceptado' : 'solicitado',
-        status: assignedDriver ? 'aceptado' : 'solicitado',
-
-        conductorId:
-          assignedDriver?.id ||
-          assignedDriver?.uid ||
-          assignedDriver?.driverId ||
-          '',
-
-        driverId:
-          assignedDriver?.id ||
-          assignedDriver?.uid ||
-          assignedDriver?.driverId ||
-          '',
-
-        conductorNombre:
-          assignedDriver?.name ||
-          assignedDriver?.nombre ||
-          'Sin asignar',
-
-        driverName:
-          assignedDriver?.name ||
-          assignedDriver?.nombre ||
-          'Sin asignar',
-
-        conductorTelefono:
-          assignedDriver?.phone ||
-          assignedDriver?.telefono ||
-          '',
-
-        vehicleTypeAssigned:
-          assignedDriver?.vehicleType ||
-          assignedDriver?.vehiculoTipo ||
-          assignedDriver?.tipoVehiculo ||
-          '',
-
-        assignedAutomatically: !!assignedDriver,
-
-        cryptoWallet:
-          paymentMethod === 'USDC' ||
-          paymentMethod === 'USDT' ||
-          paymentMethod === 'BTC'
-            ? 'wallet-demo-001'
-            : '',
-        cryptoTxId: ''
-      };
-
-      await createTrip(tripPayload);
-
-      if (assignedDriver) {
-        setMessage(
-          `Viaje creado y asignado automáticamente a ${
-            assignedDriver.name || assignedDriver.nombre || 'un conductor'
-          } (${serviceType === 'auto' ? 'Auto' : 'Moto'}).`
-        );
-      } else {
-        setMessage(
-          `Viaje creado en modo ${serviceType === 'auto' ? 'Auto' : 'Moto'}, pero no había conductores disponibles.`
-        );
-      }
-
-      await refreshAll();
-    } catch (error) {
-      setMessage(`No se pudo crear el viaje: ${error.message}`);
-    }
-  }
+  const viajesActivos = useMemo(() => {
+    return viajes.filter((v) =>
+      ['aceptado', 'en_camino', 'en_viaje'].includes(v?.estado || v?.status)
+    );
+  }, [viajes]);
 
   return (
-    <div className="stack-lg">
-      <section className="form-map-grid">
-        <form className="stack-md form-card" onSubmit={handleRequestTrip}>
-          <h2>Pedir viaje</h2>
+    <div className="map-admin-page">
+      <div className="map-admin-header">
+        <h2>Mapa en vivo</h2>
+        <p>Conductores y viajes en tiempo real</p>
+      </div>
 
-          <label>
-            Ciudad
-            <select
-              value={selectedCity}
-              onChange={(event) => setSelectedCity(event.target.value)}
-            >
-              {cities.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
+      <div className="map-admin-stats">
+        <div className="map-stat-card">
+          <span>Conductores</span>
+          <strong>{conductores.length}</strong>
+        </div>
 
-          <label>
-            Pasajero
-            <input
-              value={passengerName}
-              onChange={(event) => setPassengerName(event.target.value)}
-            />
-          </label>
+        <div className="map-stat-card">
+          <span>Conductores con GPS</span>
+          <strong>{conductoresConGps.length}</strong>
+        </div>
 
-          <label>
-            Teléfono
-            <input
-              value={passengerPhone}
-              onChange={(event) => setPassengerPhone(event.target.value)}
-            />
-          </label>
+        <div className="map-stat-card">
+          <span>Viajes</span>
+          <strong>{viajes.length}</strong>
+        </div>
 
-          <label>
-            Tipo de viaje
-            <select
-              value={serviceType}
-              onChange={(event) => setServiceType(event.target.value)}
-            >
-              <option value="auto">Auto</option>
-              <option value="moto">Moto</option>
-            </select>
-          </label>
+        <div className="map-stat-card">
+          <span>Viajes activos</span>
+          <strong>{viajesActivos.length}</strong>
+        </div>
+      </div>
 
-          <label>
-            Origen
-            <input
-              value={originText}
-              onChange={(event) => setOriginText(event.target.value)}
-            />
-          </label>
+      <div className="map-legend">
+        <div><span className="legend-dot conductor"></span> Conductor</div>
+        <div><span className="legend-dot solicitado"></span> Viaje solicitado</div>
+        <div><span className="legend-dot aceptado"></span> Viaje aceptado</div>
+        <div><span className="legend-dot encamino"></span> En camino</div>
+        <div><span className="legend-dot enviaje"></span> En viaje</div>
+        <div><span className="legend-dot finalizado"></span> Finalizado</div>
+        <div><span className="legend-dot cancelado"></span> Cancelado</div>
+      </div>
 
-          <label>
-            Destino
-            <input
-              value={destinationText}
-              onChange={(event) => setDestinationText(event.target.value)}
-            />
-          </label>
-
-          <label>
-            Distancia aproximada al destino (demo en km)
-            <input
-              type="number"
-              min="1"
-              max="30"
-              value={destinationOffsetKm}
-              onChange={(event) => setDestinationOffsetKm(event.target.value)}
-            />
-          </label>
-
-          <label>
-            Método de pago
-            <select
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.target.value)}
-            >
-              {SUPPORTED_PAYMENT_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Notas
-            <textarea
-              rows="3"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </label>
-
-          <div className="button-row">
-            <button type="button" onClick={useCurrentLocation}>
-              Usar mi ubicación
-            </button>
-            <button type="submit" className="primary-button">
-              Crear viaje
-            </button>
-          </div>
-
-          <p className="helper-text">
-            {message || 'Puedes usar OpenStreetMap sin pagar claves para el mapa base.'}
-          </p>
-        </form>
-
-        <div className="stack-md">
-          <MapView
-            center={city?.center ?? { lat: -26.8241, lng: -65.2226 }}
-            passenger={position}
-            destination={destinationPoint}
-            drivers={compatibleDrivers}
+      <div className="map-wrapper">
+        <MapContainer
+          center={CENTRO_TUCUMAN}
+          zoom={12}
+          scrollWheelZoom={true}
+          className="admin-live-map"
+        >
+          <TileLayer
+            attribution="&copy; OpenStreetMap contributors"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          <div className="info-grid">
-            <article className="info-card highlight">
-              <h2>Precio estimado</h2>
-              <strong className="big-number">
-                {estimate ? estimate.formatted : '—'}
-              </strong>
-              <p>
-                Tipo: {serviceType === 'auto' ? 'Auto' : 'Moto'} · Distancia:{' '}
-                {estimate ? `${estimate.distanceKm} km` : '—'} · Tiempo:{' '}
-                {estimate ? `${estimate.durationMin} min` : '—'}
-              </p>
-            </article>
+          <AutoCenter conductores={conductoresConGps} />
 
-            <article className="info-card">
-              <h2>Conductor más cercano</h2>
-              {nearestDriver ? (
-                <>
-                  <strong>{nearestDriver.name || nearestDriver.nombre}</strong>
-                  <p>{nearestDriver.vehicle || nearestDriver.vehiculo || '-'}</p>
-                  <p>
-                    Tipo:{' '}
-                    {(
-                      nearestDriver.vehicleType ||
-                      nearestDriver.vehiculoTipo ||
-                      nearestDriver.tipoVehiculo ||
-                      serviceType ||
-                      '-'
-                    ).toString()}
-                  </p>
-                  <p>
-                    Aprox. {nearestDriver.distanceKm.toFixed(2)} km del pasajero.
-                  </p>
-                </>
-              ) : (
-                <p>
-                  No hay conductores disponibles para{' '}
-                  <strong>{serviceType === 'auto' ? 'Auto' : 'Moto'}</strong> en
-                  esta ciudad.
-                </p>
-              )}
-            </article>
-          </div>
-        </div>
-      </section>
+          {conductoresConGps.map((conductor) => {
+            const pos = obtenerCoordConductor(conductor);
+            if (!pos) return null;
+
+            return (
+              <Marker key={`conductor-${conductor.id}`} position={pos}>
+                <Popup>
+                  <div>
+                    <strong>Conductor</strong>
+                    <br />
+                    Nombre: {conductor?.nombre || 'Sin nombre'}
+                    <br />
+                    Estado: {conductor?.estado || conductor?.status || 'Sin estado'}
+                    <br />
+                    Vehículo: {conductor?.vehiculo || conductor?.vehiculoNombre || conductor?.vehicleType || '-'}
+                    <br />
+                    Patente: {conductor?.patente || '-'}
+                    <br />
+                    Lat: {pos[0].toFixed(6)}
+                    <br />
+                    Lng: {pos[1].toFixed(6)}
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+
+          {viajesConGps.map((viaje) => {
+            const pos = obtenerCoordViaje(viaje);
+            if (!pos) return null;
+
+            return (
+              <CircleMarker
+                key={`viaje-${viaje.id}`}
+                center={pos}
+                radius={10}
+                pathOptions={{
+                  color: colorViaje(viaje?.estado || viaje?.status),
+                  fillColor: colorViaje(viaje?.estado || viaje?.status),
+                  fillOpacity: 0.75
+                }}
+              >
+                <Popup>
+                  <div>
+                    <strong>Viaje</strong>
+                    <br />
+                    Estado: {viaje?.estado || viaje?.status || '-'}
+                    <br />
+                    Pasajero: {viaje?.passengerName || viaje?.pasajeroNombre || '-'}
+                    <br />
+                    Origen: {viaje?.originText || viaje?.origen || viaje?.pickup || '-'}
+                    <br />
+                    Destino: {viaje?.destinationText || viaje?.destino || viaje?.dropoff || '-'}
+                    <br />
+                    Precio: ${viaje?.price || viaje?.precio || 0}
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+
+          {viajesActivos.map((viaje) => {
+            const driverId = viaje?.conductorId || viaje?.driverId;
+            const conductor = conductores.find((c) => c.id === driverId);
+            const posConductor = conductor ? obtenerCoordConductor(conductor) : null;
+            const posViaje = obtenerCoordViaje(viaje);
+
+            if (!posConductor || !posViaje) return null;
+
+            return (
+              <Polyline
+                key={`linea-${viaje.id}`}
+                positions={[posConductor, posViaje]}
+                pathOptions={{
+                  color: '#111827',
+                  weight: 3,
+                  opacity: 0.7,
+                  dashArray: '8, 8'
+                }}
+              />
+            );
+          })}
+        </MapContainer>
+      </div>
     </div>
   );
 }
