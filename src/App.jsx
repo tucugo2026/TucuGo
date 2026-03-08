@@ -3,7 +3,7 @@ import Header from './components/Header.jsx';
 import DashboardCards from './components/DashboardCards.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 import PassengerPanel from './pages/PassengerPanel.jsx';
-import DriverPanel from './pages/DriverPanel.jsx';
+import ConductorPanel from './pages/conductor/ConductorPanel.jsx';
 import DataModelPanel from './pages/DataModelPanel.jsx';
 import InstallPrompt from './components/InstallPrompt.jsx';
 import AuthPage from './pages/AuthPage.jsx';
@@ -31,6 +31,7 @@ const tabsByRole = {
 };
 
 export default function App() {
+
   const [activeTab, setActiveTab] = useState('admin');
   const [cities, setCities] = useState([]);
   const [drivers, setDrivers] = useState([]);
@@ -44,67 +45,85 @@ export default function App() {
 
   async function refreshAll() {
     const [cityRows, driverRows] = await Promise.all([getCities(), getDrivers()]);
-    setCities(Array.isArray(cityRows) ? cityRows : []);
-    setDrivers(Array.isArray(driverRows) ? driverRows : []);
+    setCities(cityRows || []);
+    setDrivers(driverRows || []);
   }
 
   async function resolveUser(user) {
     setAuthUser(user);
+
     if (!user) {
       setProfile(null);
       return;
     }
+
     const data = await getUserProfile(user.uid);
     setProfile(data);
-    setActiveTab(data?.rol === 'admin' ? 'admin' : data?.rol === 'conductor' ? 'driver' : 'passenger');
+
+    setActiveTab(
+      data?.rol === 'admin'
+        ? 'admin'
+        : data?.rol === 'conductor'
+        ? 'driver'
+        : 'passenger'
+    );
   }
 
   useEffect(() => {
+
     let unsubscribeTrips = () => {};
     let unsubscribeAuth = () => {};
 
     async function boot() {
+
       try {
+
         setLoading(true);
         setBootMessage('Preparando TucuGo...');
+
         await initAnalytics().catch(() => null);
 
-        // Base data only once per boot
-        try {
-          await seedBaseData();
-        } catch (error) {
-          console.warn('seedBaseData:', error);
-        }
+        await seedBaseData().catch(() => null);
 
         await refreshAll();
+
         unsubscribeTrips = subscribeTrips((rows) => {
-          setTrips(Array.isArray(rows) ? rows : []);
+          setTrips(rows || []);
         });
 
         unsubscribeAuth = subscribeAuth(async (user) => {
-          try {
-            await resolveUser(user);
-          } finally {
-            setFirebaseReady(true);
-          }
+          await resolveUser(user);
+          setFirebaseReady(true);
         });
 
-        setBootMessage(USE_FIRESTORE ? 'Conectado a Firebase.' : 'Modo demo local activo.');
+        setBootMessage(
+          USE_FIRESTORE
+            ? 'Conectado a Firebase.'
+            : 'Modo demo local activo.'
+        );
+
       } catch (error) {
-        console.error('Boot error:', error);
-        setBootMessage(`Hubo un problema al iniciar: ${error.message}`);
+
+        console.error(error);
+        setBootMessage(`Error al iniciar: ${error.message}`);
+
       } finally {
+
         setLoading(false);
+
       }
     }
 
     boot();
+
     const timer = setTimeout(() => setShowSplash(false), 2200);
+
     return () => {
       clearTimeout(timer);
       unsubscribeTrips();
       unsubscribeAuth();
     };
+
   }, []);
 
   const tabs = tabsByRole[profile?.rol || 'pasajero'];
@@ -124,6 +143,7 @@ export default function App() {
   }
 
   const content = useMemo(() => {
+
     if (!firebaseReady) {
       return <div className="panel-card">Cargando autenticación...</div>;
     }
@@ -132,25 +152,43 @@ export default function App() {
       return <AuthPage cities={cities} onAuthResolved={resolveUser} />;
     }
 
-    if (profile?.rol === 'conductor' && profile?.aprobado === false) {
-      return <div className="info-card"><h2>Cuenta de conductor pendiente</h2><p>Tu cuenta está creada, pero todavía necesita aprobación de un admin para entrar al panel de conductor.</p></div>;
-    }
-
     switch (activeTab) {
+
       case 'passenger':
-        return <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+        return (
+          <PassengerPanel
+            cities={cities}
+            drivers={drivers}
+            refreshAll={refreshAll}
+          />
+        );
+
       case 'driver':
-        return <DriverPanel cities={cities} drivers={drivers} trips={trips} refreshAll={refreshAll} profile={profile} />;
+        return (
+          <ConductorPanel
+            profile={profile}
+            trips={trips}
+            refreshAll={refreshAll}
+          />
+        );
+
       case 'model':
-        return profile?.rol === 'admin' ? <DataModelPanel /> : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+        return profile?.rol === 'admin'
+          ? <DataModelPanel />
+          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+
       case 'users':
-        return profile?.rol === 'admin' ? <UsersAdminPanel /> : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+        return profile?.rol === 'admin'
+          ? <UsersAdminPanel />
+          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+
       case 'admin':
       default:
         return profile?.rol === 'admin'
           ? <AdminPanel cities={cities} drivers={drivers} trips={trips} refreshAll={refreshAll} />
           : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
     }
+
   }, [firebaseReady, authUser, activeTab, profile, cities, drivers, trips]);
 
   return (
@@ -158,7 +196,11 @@ export default function App() {
       {showSplash ? (
         <div className="splash-screen">
           <div className="splash-card">
-            <img src="./logo-splash-full.png" alt="TucuGo" className="splash-image splash-image-brand" />
+            <img
+              src="./logo-splash-full.png"
+              alt="TucuGo"
+              className="splash-image splash-image-brand"
+            />
             <div className="splash-loader">
               <span></span><span></span><span></span>
             </div>
@@ -168,8 +210,11 @@ export default function App() {
       ) : null}
 
       <div className="app-shell">
+
         <Header title={APP_NAME} subtitle={APP_SUBTITLE} />
+
         <DashboardCards stats={stats} />
+
         <InstallPrompt />
 
         <div className="boot-banner">
@@ -177,7 +222,25 @@ export default function App() {
           {bootMessage}
         </div>
 
-        {authUser && profile ? <UserMenu profile={profile} onLogout={handleLogout} /> : null}
+        {authUser && profile ? (
+          <div style={{display:"flex",justifyContent:"flex-end",gap:"10px"}}>
+            <UserMenu profile={profile} onLogout={handleLogout} />
+            <button
+              onClick={handleLogout}
+              style={{
+                background:"#ef4444",
+                color:"white",
+                border:"none",
+                padding:"8px 14px",
+                borderRadius:"8px",
+                cursor:"pointer",
+                fontWeight:"bold"
+              }}
+            >
+              Salir
+            </button>
+          </div>
+        ) : null}
 
         {authUser && profile ? (
           <div className="tabs">
@@ -193,7 +256,10 @@ export default function App() {
           </div>
         ) : null}
 
-        <main className="panel-card">{content}</main>
+        <main className="panel-card">
+          {content}
+        </main>
+
       </div>
     </>
   );

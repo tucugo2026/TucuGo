@@ -949,4 +949,8 @@ button:hover {
   table {
     min-width: 720px;
   }
+
+.splash-image-brand {
+  filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.7))
+          drop-shadow(0px 0px 12px rgba(0, 0, 0, 0.6));
 }
