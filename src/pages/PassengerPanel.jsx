@@ -74,7 +74,19 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
   const compatibleDrivers = useMemo(() => {
     return drivers.filter((item) => {
-      if (item.city !== selectedCity) return false;
+      const driverCity = item.city || item.ciudad || '';
+      if (driverCity !== selectedCity) return false;
+
+      const driverStatus = (item.estado || item.status || '').toString().toLowerCase();
+      if (driverStatus && driverStatus !== 'disponible') return false;
+
+      const approvedRaw = item.aprobado;
+      const approved =
+        approvedRaw === true ||
+        approvedRaw === 'true' ||
+        approvedRaw === undefined;
+
+      if (!approved) return false;
 
       const driverVehicleType =
         (item.vehicleType || item.vehiculoTipo || item.tipoVehiculo || '')
@@ -107,10 +119,13 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
   async function handleRequestTrip(event) {
     event.preventDefault();
+
     if (!city || !position || !destinationPoint || !estimate) return;
 
     try {
-      await createTrip({
+      const assignedDriver = nearestDriver || null;
+
+      const tripPayload = {
         passengerName,
         passengerPhone,
         country: city.country,
@@ -136,6 +151,44 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
         vehicleTypeRequested: serviceType,
         tripType: serviceType,
 
+        estado: assignedDriver ? 'aceptado' : 'solicitado',
+        status: assignedDriver ? 'aceptado' : 'solicitado',
+
+        conductorId:
+          assignedDriver?.id ||
+          assignedDriver?.uid ||
+          assignedDriver?.driverId ||
+          '',
+
+        driverId:
+          assignedDriver?.id ||
+          assignedDriver?.uid ||
+          assignedDriver?.driverId ||
+          '',
+
+        conductorNombre:
+          assignedDriver?.name ||
+          assignedDriver?.nombre ||
+          'Sin asignar',
+
+        driverName:
+          assignedDriver?.name ||
+          assignedDriver?.nombre ||
+          'Sin asignar',
+
+        conductorTelefono:
+          assignedDriver?.phone ||
+          assignedDriver?.telefono ||
+          '',
+
+        vehicleTypeAssigned:
+          assignedDriver?.vehicleType ||
+          assignedDriver?.vehiculoTipo ||
+          assignedDriver?.tipoVehiculo ||
+          '',
+
+        assignedAutomatically: !!assignedDriver,
+
         cryptoWallet:
           paymentMethod === 'USDC' ||
           paymentMethod === 'USDT' ||
@@ -143,11 +196,21 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
             ? 'wallet-demo-001'
             : '',
         cryptoTxId: ''
-      });
+      };
 
-      setMessage(
-        `Viaje creado correctamente en modo ${serviceType === 'auto' ? 'Auto' : 'Moto'}.`
-      );
+      await createTrip(tripPayload);
+
+      if (assignedDriver) {
+        setMessage(
+          `Viaje creado y asignado automáticamente a ${
+            assignedDriver.name || assignedDriver.nombre || 'un conductor'
+          } (${serviceType === 'auto' ? 'Auto' : 'Moto'}).`
+        );
+      } else {
+        setMessage(
+          `Viaje creado en modo ${serviceType === 'auto' ? 'Auto' : 'Moto'}, pero no había conductores disponibles.`
+        );
+      }
 
       await refreshAll();
     } catch (error) {
@@ -291,16 +354,17 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
               <h2>Conductor más cercano</h2>
               {nearestDriver ? (
                 <>
-                  <strong>{nearestDriver.name}</strong>
-                  <p>{nearestDriver.vehicle}</p>
+                  <strong>{nearestDriver.name || nearestDriver.nombre}</strong>
+                  <p>{nearestDriver.vehicle || nearestDriver.vehiculo || '-'}</p>
                   <p>
                     Tipo:{' '}
-                    {(nearestDriver.vehicleType ||
+                    {(
+                      nearestDriver.vehicleType ||
                       nearestDriver.vehiculoTipo ||
                       nearestDriver.tipoVehiculo ||
                       serviceType ||
-                      '-')
-                      .toString()}
+                      '-'
+                    ).toString()}
                   </p>
                   <p>
                     Aprox. {nearestDriver.distanceKm.toFixed(2)} km del pasajero.
