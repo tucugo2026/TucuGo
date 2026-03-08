@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import PassengerLiveMap from '../components/PassengerLiveMap.jsx';
 import { SUPPORTED_PAYMENT_METHODS } from '../config/appConfig.js';
@@ -25,6 +25,8 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
   const [destinationOffsetKm, setDestinationOffsetKm] = useState(6);
   const [message, setMessage] = useState('');
   const [myLatestTrip, setMyLatestTrip] = useState(null);
+  const [tripNotification, setTripNotification] = useState(null);
+  const previousTripStatusRef = useRef(null);
 
   const city = useMemo(
     () => cities.find((item) => item.id === selectedCity) ?? cities[0],
@@ -65,6 +67,112 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
     return () => unsubscribe();
   }, [passengerPhone]);
+
+  function reproducirBeep() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      const audioCtx = new AudioCtx();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+
+      gainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.start(audioCtx.currentTime);
+      oscillator.stop(audioCtx.currentTime + 0.35);
+    } catch (error) {
+      console.warn('No se pudo reproducir el sonido:', error);
+    }
+  }
+
+  function getNotificationFromStatus(status) {
+    switch (status) {
+      case 'aceptado':
+        return {
+          type: 'info',
+          title: 'Conductor asignado',
+          text: 'Tu conductor ya fue asignado.'
+        };
+      case 'en_camino':
+        return {
+          type: 'warning',
+          title: 'Conductor en camino',
+          text: 'Tu conductor está yendo hacia tu ubicación.'
+        };
+      case 'en_viaje':
+        return {
+          type: 'success',
+          title: 'Viaje iniciado',
+          text: 'Tu viaje comenzó.'
+        };
+      case 'finalizado':
+        return {
+          type: 'success',
+          title: 'Viaje finalizado',
+          text: 'Tu viaje terminó correctamente.'
+        };
+      case 'cancelado':
+        return {
+          type: 'danger',
+          title: 'Viaje cancelado',
+          text: 'Tu viaje fue cancelado.'
+        };
+      default:
+        return null;
+    }
+  }
+
+  useEffect(() => {
+    const currentStatus = myLatestTrip?.estado || myLatestTrip?.status || null;
+
+    if (!currentStatus) return;
+
+    if (previousTripStatusRef.current === null) {
+      previousTripStatusRef.current = currentStatus;
+      return;
+    }
+
+    if (previousTripStatusRef.current !== currentStatus) {
+      const notif = getNotificationFromStatus(currentStatus);
+
+      if (notif) {
+        setTripNotification(notif);
+        reproducirBeep();
+
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(notif.title, { body: notif.text });
+        }
+      }
+
+      previousTripStatusRef.current = currentStatus;
+    }
+  }, [myLatestTrip]);
+
+  useEffect(() => {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!tripNotification) return;
+
+    const timer = setTimeout(() => {
+      setTripNotification(null);
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [tripNotification]);
 
   const destinationPoint = useMemo(() => {
     if (!position) return null;
@@ -329,6 +437,29 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
   return (
     <div className="stack-lg">
+      {tripNotification ? (
+        <div
+          style={{
+            background:
+              tripNotification.type === 'danger'
+                ? '#fee2e2'
+                : tripNotification.type === 'success'
+                ? '#dcfce7'
+                : tripNotification.type === 'warning'
+                ? '#fef3c7'
+                : '#dbeafe',
+            color: '#111827',
+            borderRadius: '14px',
+            padding: '14px 16px',
+            fontWeight: 700,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.08)'
+          }}
+        >
+          <div>{tripNotification.title}</div>
+          <div style={{ fontWeight: 500, marginTop: '4px' }}>{tripNotification.text}</div>
+        </div>
+      ) : null}
+
       <section className="form-map-grid">
         <form className="stack-md form-card" onSubmit={handleRequestTrip}>
           <h2>Pedir viaje</h2>
