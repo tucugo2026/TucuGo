@@ -36,6 +36,11 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
   const [myLatestTrip, setMyLatestTrip] = useState(null);
   const [tripNotification, setTripNotification] = useState(null);
   const [historyTrips, setHistoryTrips] = useState([]);
+  const [etaData, setEtaData] = useState({
+    distanceKm: null,
+    durationMin: null
+  });
+
   const previousTripStatusRef = useRef(null);
 
   const city = useMemo(
@@ -286,17 +291,6 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     );
   }, [drivers, nearestDriver, myLatestTrip]);
 
-  const driverDistanceKm = useMemo(() => {
-    if (!assignedDriver?.ubicacion || !position) return null;
-
-    const driverPos = {
-      lat: assignedDriver.ubicacion.lat,
-      lng: assignedDriver.ubicacion.lng
-    };
-
-    return haversineKm(driverPos, position);
-  }, [assignedDriver, position]);
-
   const passengerTripStatusText = useMemo(() => {
     const status = myLatestTrip?.estado || myLatestTrip?.status;
 
@@ -319,6 +313,26 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
         return 'Aún no tienes un viaje activo';
     }
   }, [myLatestTrip]);
+
+  const etaMessage = useMemo(() => {
+    const status = myLatestTrip?.estado || myLatestTrip?.status || '';
+
+    if (!assignedDriver || etaData.durationMin == null) return '—';
+
+    if (status === 'aceptado' || status === 'en_camino') {
+      return `Tu conductor llega en ${etaData.durationMin} min`;
+    }
+
+    if (status === 'llegue') {
+      return 'Tu conductor ya está en el punto de recogida';
+    }
+
+    if (status === 'en_viaje') {
+      return 'Tu viaje está en curso';
+    }
+
+    return '—';
+  }, [myLatestTrip, assignedDriver, etaData]);
 
   async function useCurrentLocation() {
     if (!city) return;
@@ -726,6 +740,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
             passenger={position}
             driver={assignedDriver}
             destination={destinationPoint}
+            onEtaUpdate={setEtaData}
           />
 
           <div className="info-grid">
@@ -751,8 +766,15 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
                 Teléfono: {assignedDriver?.phone || assignedDriver?.telefono || myLatestTrip?.conductorTelefono || '-'}
               </p>
               <p>
-                Distancia del conductor:{' '}
-                {driverDistanceKm != null ? `${driverDistanceKm.toFixed(2)} km` : '—'}
+                Distancia real del conductor:{' '}
+                {etaData.distanceKm != null ? `${etaData.distanceKm} km` : '—'}
+              </p>
+              <p>
+                ETA:{' '}
+                {etaData.durationMin != null ? `${etaData.durationMin} min` : '—'}
+              </p>
+              <p>
+                <b>{etaMessage}</b>
               </p>
 
               <div className="botones-grid" style={{ marginTop: '12px' }}>

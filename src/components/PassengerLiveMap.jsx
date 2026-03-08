@@ -52,19 +52,47 @@ function buildOsrmUrl(start, end) {
   return `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
 }
 
-async function fetchRoute(start, end) {
-  if (!start || !end) return [];
+async function fetchRouteData(start, end) {
+  if (!start || !end) {
+    return {
+      points: [],
+      distanceKm: null,
+      durationMin: null
+    };
+  }
 
   const response = await fetch(buildOsrmUrl(start, end));
   if (!response.ok) throw new Error('No se pudo obtener la ruta');
 
   const data = await response.json();
-  const coords = data?.routes?.[0]?.geometry?.coordinates || [];
+  const route = data?.routes?.[0];
 
-  return coords.map(([lng, lat]) => [lat, lng]);
+  const coords = route?.geometry?.coordinates || [];
+  const points = coords.map(([lng, lat]) => [lat, lng]);
+
+  const distanceKm =
+    typeof route?.distance === 'number'
+      ? Number((route.distance / 1000).toFixed(2))
+      : null;
+
+  const durationMin =
+    typeof route?.duration === 'number'
+      ? Math.max(1, Math.round(route.duration / 60))
+      : null;
+
+  return {
+    points,
+    distanceKm,
+    durationMin
+  };
 }
 
-export default function PassengerLiveMap({ passenger, driver, destination }) {
+export default function PassengerLiveMap({
+  passenger,
+  driver,
+  destination,
+  onEtaUpdate
+}) {
   const [routeToDestination, setRouteToDestination] = useState([]);
   const [routeDriverToPassenger, setRouteDriverToPassenger] = useState([]);
 
@@ -93,8 +121,10 @@ export default function PassengerLiveMap({ passenger, driver, destination }) {
           return;
         }
 
-        const points = await fetchRoute(passengerPos, destinationPos);
-        if (!cancelled) setRouteToDestination(points);
+        const data = await fetchRouteData(passengerPos, destinationPos);
+        if (!cancelled) {
+          setRouteToDestination(data.points);
+        }
       } catch (error) {
         console.error('Ruta pasajero-destino:', error);
         if (!cancelled) setRouteToDestination([]);
@@ -115,14 +145,31 @@ export default function PassengerLiveMap({ passenger, driver, destination }) {
       try {
         if (!driverPos || !passengerPos) {
           setRouteDriverToPassenger([]);
+          onEtaUpdate?.({
+            distanceKm: null,
+            durationMin: null
+          });
           return;
         }
 
-        const points = await fetchRoute(driverPos, passengerPos);
-        if (!cancelled) setRouteDriverToPassenger(points);
+        const data = await fetchRouteData(driverPos, passengerPos);
+
+        if (!cancelled) {
+          setRouteDriverToPassenger(data.points);
+          onEtaUpdate?.({
+            distanceKm: data.distanceKm,
+            durationMin: data.durationMin
+          });
+        }
       } catch (error) {
         console.error('Ruta conductor-pasajero:', error);
-        if (!cancelled) setRouteDriverToPassenger([]);
+        if (!cancelled) {
+          setRouteDriverToPassenger([]);
+          onEtaUpdate?.({
+            distanceKm: null,
+            durationMin: null
+          });
+        }
       }
     }
 
@@ -131,7 +178,7 @@ export default function PassengerLiveMap({ passenger, driver, destination }) {
     return () => {
       cancelled = true;
     };
-  }, [driverPos, passengerPos]);
+  }, [driverPos, passengerPos, onEtaUpdate]);
 
   const center = passengerPos || driverPos || destinationPos || DEFAULT_CENTER;
 
