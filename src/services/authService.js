@@ -27,7 +27,9 @@ export async function registerUser({
   city,
   phone = "",
   vehicleType = "",
-  licensePlate = ""
+  licensePlate = "",
+  defaultPaymentMethod = "Transferencia",
+  favoriteAddresses = []
 }) {
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   const user = userCredential.user;
@@ -44,6 +46,8 @@ export async function registerUser({
     ciudad: city,
     telefono: phone,
     aprobado: role === "conductor" ? false : true,
+    metodoPagoDefault: defaultPaymentMethod,
+    direccionesHabituales: Array.isArray(favoriteAddresses) ? favoriteAddresses : [],
     creado: serverTimestamp(),
     createdAt: now.toISOString()
   };
@@ -58,29 +62,22 @@ export async function registerUser({
       telefono: phone,
       city,
       ciudad: city,
-
       estado: "pendiente",
       status: "pendiente",
       aprobado: false,
-
       vehicleType: vehicleType || "",
       vehiculoTipo: vehicleType || "",
       tipoVehiculo: vehicleType || "",
-
       patente: licensePlate || "",
-
       fechaRegistro: now.toISOString(),
       finPeriodoGratis: freeMonthEnd.toISOString(),
-
       suscripcionActiva: true,
       planActivo: true,
       plan: "trial",
       planMensualUSD: 3,
       ultimoPago: null,
-
       viajeActualId: "",
       ubicacion: null,
-
       createdAt: serverTimestamp(),
       actualizadoEn: serverTimestamp(),
       updatedAt: serverTimestamp()
@@ -131,6 +128,16 @@ export async function getUserProfile(uid) {
   }
 
   return profile;
+}
+
+export async function updateUserProfile(uid, data = {}) {
+  if (!uid) throw new Error("UID requerido");
+
+  await updateDoc(doc(db, "usuarios", uid), {
+    ...data,
+    actualizadoEn: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
 }
 
 export async function approveDriver(uid) {

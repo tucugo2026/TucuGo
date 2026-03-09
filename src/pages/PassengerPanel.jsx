@@ -20,8 +20,23 @@ import {
 import { calculatePrice, formatMoney } from '../services/pricing.js';
 import { createTrip } from '../services/tripService.js';
 import { db } from '../services/firebase.js';
+import { getUserProfile, updateUserProfile } from '../services/authService.js';
 
-export default function PassengerPanel({ cities, drivers, refreshAll }) {
+const SERVICE_LABELS = {
+  moto: 'Moto',
+  auto: 'Auto',
+  confort: 'Confort',
+  flete: 'TucuGo Fletes'
+};
+
+const SERVICE_MULTIPLIERS = {
+  moto: 0.85,
+  auto: 1,
+  confort: 1.25,
+  flete: 1.6
+};
+
+export default function PassengerPanel({ cities, drivers, refreshAll, profile }) {
   const [selectedCity, setSelectedCity] = useState(cities[0]?.id || 'tucuman');
   const [passengerName, setPassengerName] = useState('Marcelo');
   const [passengerPhone, setPassengerPhone] = useState('+543810000000');
@@ -40,6 +55,12 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     distanceKm: null,
     durationMin: null
   });
+  const [favoriteAddresses, setFavoriteAddresses] = useState([]);
+  const [homeAddress, setHomeAddress] = useState('');
+  const [workAddress, setWorkAddress] = useState('');
+  const [reserveMode, setReserveMode] = useState(false);
+  const [reserveDate, setReserveDate] = useState('');
+  const [reserveTime, setReserveTime] = useState('');
 
   const previousTripStatusRef = useRef(null);
 
@@ -56,6 +77,33 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
     loadPosition();
   }, [city]);
+
+  useEffect(() => {
+    async function loadProfileData() {
+      if (!profile?.uid) return;
+
+      const fullProfile = await getUserProfile(profile.uid);
+      if (!fullProfile) return;
+
+      setPassengerName(fullProfile.nombre || 'Marcelo');
+      setPassengerPhone(fullProfile.telefono || '+543810000000');
+      setPaymentMethod(fullProfile.metodoPagoDefault || 'Transferencia');
+
+      const addresses = Array.isArray(fullProfile.direccionesHabituales)
+        ? fullProfile.direccionesHabituales
+        : [];
+
+      setFavoriteAddresses(addresses);
+
+      const casa = addresses.find((item) => item.alias === 'Casa');
+      const trabajo = addresses.find((item) => item.alias === 'Trabajo');
+
+      setHomeAddress(casa?.direccion || '');
+      setWorkAddress(trabajo?.direccion || '');
+    }
+
+    loadProfileData();
+  }, [profile]);
 
   useEffect(() => {
     if (!passengerPhone) return;
@@ -133,6 +181,12 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
           type: 'warning',
           title: 'Tu conductor llegó',
           text: 'El conductor ya está en el punto de recogida.'
+        };
+      case 'reservado':
+        return {
+          type: 'info',
+          title: 'Viaje reservado',
+          text: 'Tu viaje quedó reservado correctamente.'
         };
       case 'en_viaje':
         return {
@@ -215,7 +269,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
     const distanceKm = haversineKm(position, destinationPoint);
     const durationMin = estimateDurationMinutes(distanceKm);
-    const multiplier = serviceType === 'moto' ? 0.85 : 1;
+    const multiplier = SERVICE_MULTIPLIERS[serviceType] || 1;
 
     const price = calculatePrice({
       baseFare: city.baseFare * multiplier,
@@ -262,14 +316,14 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
   }, [drivers, selectedCity, serviceType]);
 
   const nearestDriver = useMemo(() => {
-    if (!position) return null;
+    if (!position || reserveMode) return null;
 
     return findNearestAvailableDriver({
       drivers: compatibleDrivers,
       city: selectedCity,
       origin: position
     });
-  }, [compatibleDrivers, selectedCity, position]);
+  }, [compatibleDrivers, selectedCity, position, reserveMode]);
 
   const assignedDriver = useMemo(() => {
     const driverId =
@@ -297,6 +351,8 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     switch (status) {
       case 'solicitado':
         return 'Esperando conductor';
+      case 'reservado':
+        return 'Tu viaje quedó reservado';
       case 'aceptado':
         return 'Tu conductor fue asignado';
       case 'en_camino':
@@ -340,6 +396,43 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     const current = await getBrowserPosition(city.center);
     setPosition(current);
     setMessage('Ubicación actualizada desde el navegador.');
+  }
+
+  async function savePassengerPreferences() {
+    if (!profile?.uid) {
+      alert('No se encontró el usuario para guardar preferencias.');
+      return;
+    }
+
+    const addresses = [];
+
+    if (homeAddress.trim()) {
+      addresses.push({ alias: 'Casa', direccion: homeAddress.trim() });
+    }
+
+    if (workAddress.trim()) {
+      addresses.push({ alias: 'Trabajo', direccion: workAddress.trim() });
+    }
+
+    try {
+      await updateUserProfile(profile.uid, {
+        metodoPagoDefault: paymentMethod,
+        direccionesHabituales: addresses,
+        telefono: passengerPhone,
+        nombre: passengerName
+      });
+
+      setFavoriteAddresses(addresses);
+      setMessage('Preferencias guardadas correctamente.');
+    } catch (error) {
+      console.error(error);
+      alert('No se pudieron guardar las preferencias.');
+    }
+  }
+
+  function useFavoriteAddress(address) {
+    setDestinationText(address);
+    setMessage('Dirección habitual aplicada.');
   }
 
   async function marcarConductorComoOcupado(driver, tripId) {
@@ -386,8 +479,13 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
     if (!city || !position || !destinationPoint || !estimate) return;
 
+    if (reserveMode && (!reserveDate || !reserveTime)) {
+      alert('Debes elegir fecha y hora para reservar el viaje.');
+      return;
+    }
+
     try {
-      const autoAssignedDriver = nearestDriver || null;
+      const autoAssignedDriver = reserveMode ? null : nearestDriver || null;
 
       const tripPayload = {
         passengerName,
@@ -395,66 +493,54 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
         country: city.country,
         city: city.id,
         currency: city.currency,
-
         originText,
         originLat: position.lat,
         originLng: position.lng,
-
         destinationText,
         destinationLat: destinationPoint.lat,
         destinationLng: destinationPoint.lng,
-
         estimatedDistanceKm: estimate.distanceKm,
         estimatedDurationMin: estimate.durationMin,
         price: estimate.price,
-
         paymentMethod,
         notes,
-
         serviceType,
         vehicleTypeRequested: serviceType,
         tripType: serviceType,
-
-        estado: autoAssignedDriver ? 'aceptado' : 'solicitado',
-        status: autoAssignedDriver ? 'aceptado' : 'solicitado',
-
+        reserveMode,
+        fechaReserva: reserveMode ? reserveDate : '',
+        horaReserva: reserveMode ? reserveTime : '',
+        estado: reserveMode ? 'reservado' : autoAssignedDriver ? 'aceptado' : 'solicitado',
+        status: reserveMode ? 'reservado' : autoAssignedDriver ? 'aceptado' : 'solicitado',
         conductorId:
           autoAssignedDriver?.id ||
           autoAssignedDriver?.uid ||
           autoAssignedDriver?.driverId ||
           '',
-
         driverId:
           autoAssignedDriver?.id ||
           autoAssignedDriver?.uid ||
           autoAssignedDriver?.driverId ||
           '',
-
         conductorNombre:
           autoAssignedDriver?.name ||
           autoAssignedDriver?.nombre ||
           'Sin asignar',
-
         driverName:
           autoAssignedDriver?.name ||
           autoAssignedDriver?.nombre ||
           'Sin asignar',
-
         conductorTelefono:
           autoAssignedDriver?.phone ||
           autoAssignedDriver?.telefono ||
           '',
-
         vehicleTypeAssigned:
           autoAssignedDriver?.vehicleType ||
           autoAssignedDriver?.vehiculoTipo ||
           autoAssignedDriver?.tipoVehiculo ||
           '',
-
         assignedAutomatically: !!autoAssignedDriver,
-
         createdAt: new Date().toISOString(),
-
         cryptoWallet:
           paymentMethod === 'USDC' ||
           paymentMethod === 'USDT' ||
@@ -471,15 +557,17 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
         await marcarConductorComoOcupado(autoAssignedDriver, tripId);
       }
 
-      if (autoAssignedDriver) {
+      if (reserveMode) {
+        setMessage(`Viaje reservado para ${reserveDate} a las ${reserveTime}.`);
+      } else if (autoAssignedDriver) {
         setMessage(
           `Viaje creado y asignado automáticamente a ${
             autoAssignedDriver.name || autoAssignedDriver.nombre || 'un conductor'
-          } (${serviceType === 'auto' ? 'Auto' : 'Moto'}).`
+          } (${SERVICE_LABELS[serviceType] || serviceType}).`
         );
       } else {
         setMessage(
-          `Viaje creado en modo ${serviceType === 'auto' ? 'Auto' : 'Moto'}, pero no había conductores disponibles.`
+          `Viaje creado en modo ${SERVICE_LABELS[serviceType] || serviceType}, pero no había conductores disponibles.`
         );
       }
 
@@ -496,7 +584,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
     }
 
     const status = myLatestTrip?.estado || myLatestTrip?.status || '';
-    const cancelables = ['solicitado', 'aceptado', 'en_camino', 'llegue'];
+    const cancelables = ['solicitado', 'reservado', 'aceptado', 'en_camino', 'llegue'];
 
     if (!cancelables.includes(status)) {
       alert('Este viaje ya no se puede cancelar desde el pasajero.');
@@ -592,7 +680,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
 
   const canCancelTrip = useMemo(() => {
     const status = myLatestTrip?.estado || myLatestTrip?.status || '';
-    return ['solicitado', 'aceptado', 'en_camino', 'llegue'].includes(status);
+    return ['solicitado', 'reservado', 'aceptado', 'en_camino', 'llegue'].includes(status);
   }, [myLatestTrip]);
 
   function formatDate(date) {
@@ -625,6 +713,52 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
           <div style={{ fontWeight: 500, marginTop: '4px' }}>{tripNotification.text}</div>
         </div>
       ) : null}
+
+      <section className="info-grid">
+        <article className="info-card">
+          <h2>Preferencias</h2>
+
+          <label>
+            Método de pago por defecto
+            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+              {SUPPORTED_PAYMENT_METHODS.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Dirección habitual - Casa
+            <input value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} placeholder="Ej: Santa Rosa 123" />
+          </label>
+
+          <label>
+            Dirección habitual - Trabajo
+            <input value={workAddress} onChange={(e) => setWorkAddress(e.target.value)} placeholder="Ej: Av. Roca 456" />
+          </label>
+
+          <div className="button-row" style={{ marginTop: '12px' }}>
+            <button type="button" className="primary-button" onClick={savePassengerPreferences}>
+              Guardar preferencias
+            </button>
+          </div>
+
+          {favoriteAddresses.length ? (
+            <div style={{ marginTop: '12px' }}>
+              <b>Direcciones rápidas:</b>
+              <div className="button-row" style={{ marginTop: '8px' }}>
+                {favoriteAddresses.map((item, index) => (
+                  <button key={`${item.alias}-${index}`} type="button" onClick={() => useFavoriteAddress(item.direccion)}>
+                    {item.alias}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </article>
+      </section>
 
       <section className="form-map-grid">
         <form className="stack-md form-card" onSubmit={handleRequestTrip}>
@@ -661,13 +795,15 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
           </label>
 
           <label>
-            Tipo de viaje
+            Tipo de servicio
             <select
               value={serviceType}
               onChange={(event) => setServiceType(event.target.value)}
             >
-              <option value="auto">Auto</option>
               <option value="moto">Moto</option>
+              <option value="auto">Auto</option>
+              <option value="confort">Confort</option>
+              <option value="flete">TucuGo Fletes</option>
             </select>
           </label>
 
@@ -699,20 +835,6 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
           </label>
 
           <label>
-            Método de pago
-            <select
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.target.value)}
-            >
-              {SUPPORTED_PAYMENT_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
             Notas
             <textarea
               rows="3"
@@ -721,12 +843,35 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
             />
           </label>
 
+          <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={reserveMode}
+              onChange={(event) => setReserveMode(event.target.checked)}
+            />
+            Reservar viaje
+          </label>
+
+          {reserveMode ? (
+            <>
+              <label>
+                Fecha de reserva
+                <input type="date" value={reserveDate} onChange={(e) => setReserveDate(e.target.value)} />
+              </label>
+
+              <label>
+                Hora de reserva
+                <input type="time" value={reserveTime} onChange={(e) => setReserveTime(e.target.value)} />
+              </label>
+            </>
+          ) : null}
+
           <div className="button-row">
             <button type="button" onClick={useCurrentLocation}>
               Usar mi ubicación
             </button>
             <button type="submit" className="primary-button">
-              Crear viaje
+              {reserveMode ? 'Reservar viaje' : 'Crear viaje'}
             </button>
           </div>
 
@@ -750,7 +895,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
                 {estimate ? estimate.formatted : '—'}
               </strong>
               <p>
-                Tipo: {serviceType === 'auto' ? 'Auto' : 'Moto'} · Distancia:{' '}
+                Servicio: {SERVICE_LABELS[serviceType]} · Distancia:{' '}
                 {estimate ? `${estimate.distanceKm} km` : '—'} · Tiempo:{' '}
                 {estimate ? `${estimate.durationMin} min` : '—'}
               </p>
@@ -823,9 +968,13 @@ export default function PassengerPanel({ cities, drivers, refreshAll }) {
             <div key={trip.id} className="info-card">
               <p><b>Origen:</b> {trip.originText || '-'}</p>
               <p><b>Destino:</b> {trip.destinationText || '-'}</p>
+              <p><b>Servicio:</b> {SERVICE_LABELS[trip.serviceType] || trip.serviceType || '-'}</p>
               <p><b>Precio:</b> ${trip.price || 0}</p>
               <p><b>Estado:</b> {trip.estado || '-'}</p>
               <p><b>Fecha:</b> {formatDate(trip.createdAt)}</p>
+              {trip.fechaReserva ? (
+                <p><b>Reserva:</b> {trip.fechaReserva} {trip.horaReserva || ''}</p>
+              ) : null}
               {trip.ratingDriver ? (
                 <p><b>Tu calificación:</b> {trip.ratingDriver} ⭐</p>
               ) : null}

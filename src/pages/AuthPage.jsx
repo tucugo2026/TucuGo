@@ -8,9 +8,12 @@ export default function AuthPage({ cities, onAuthResolved }) {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('pasajero');
   const [city, setCity] = useState(cities[0]?.id || 'tucuman');
+  const [phone, setPhone] = useState('');
   const [vehicleType, setVehicleType] = useState('auto');
   const [licensePlate, setLicensePlate] = useState('');
-  const [phone, setPhone] = useState('');
+  const [defaultPaymentMethod, setDefaultPaymentMethod] = useState('Transferencia');
+  const [homeAddress, setHomeAddress] = useState('');
+  const [workAddress, setWorkAddress] = useState('');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,6 +33,22 @@ export default function AuthPage({ cities, onAuthResolved }) {
         const user = await loginUser(email, password);
         await onAuthResolved(user);
       } else {
+        const favoriteAddresses = [];
+
+        if (homeAddress.trim()) {
+          favoriteAddresses.push({
+            alias: 'Casa',
+            direccion: homeAddress.trim()
+          });
+        }
+
+        if (workAddress.trim()) {
+          favoriteAddresses.push({
+            alias: 'Trabajo',
+            direccion: workAddress.trim()
+          });
+        }
+
         const user = await registerUser({
           name,
           email,
@@ -37,8 +56,10 @@ export default function AuthPage({ cities, onAuthResolved }) {
           role,
           city,
           phone,
-          vehicleType: role === 'conductor' ? vehicleType : '',
-          licensePlate: role === 'conductor' ? licensePlate : ''
+          vehicleType,
+          licensePlate,
+          defaultPaymentMethod,
+          favoriteAddresses
         });
 
         await onAuthResolved(user);
@@ -78,95 +99,90 @@ export default function AuthPage({ cities, onAuthResolved }) {
 
         <form onSubmit={handleSubmit} className="stack-md">
           {mode === 'register' ? (
-            <label>
-              Nombre
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </label>
+            <>
+              <label>
+                Nombre
+                <input value={name} onChange={(e) => setName(e.target.value)} required />
+              </label>
+
+              <label>
+                Teléfono
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+543810000000" />
+              </label>
+            </>
           ) : null}
 
           <label>
             Email
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </label>
 
           <label>
             Contraseña
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength="6"
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength="6" />
           </label>
 
           {mode === 'register' ? (
             <>
               <label>
-                Tipo de cuenta
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                >
+                Rol
+                <select value={role} onChange={(e) => setRole(e.target.value)}>
                   <option value="pasajero">Pasajero</option>
                   <option value="conductor">Conductor</option>
+                  <option value="admin">Admin</option>
                 </select>
               </label>
 
               <label>
                 Ciudad
-                <select
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                >
+                <select value={city} onChange={(e) => setCity(e.target.value)}>
                   {cities.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
+                    <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
                 </select>
               </label>
 
-              <label>
-                Teléfono
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="3811234567"
-                  required={mode === 'register'}
-                />
-              </label>
+              {role !== 'conductor' ? (
+                <>
+                  <label>
+                    Método de pago por defecto
+                    <select value={defaultPaymentMethod} onChange={(e) => setDefaultPaymentMethod(e.target.value)}>
+                      <option value="Transferencia">Transferencia</option>
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Tarjeta">Tarjeta</option>
+                      <option value="USDT">USDT</option>
+                      <option value="USDC">USDC</option>
+                      <option value="BTC">BTC</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Dirección habitual - Casa
+                    <input value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} placeholder="Ej: Santa Rosa 123" />
+                  </label>
+
+                  <label>
+                    Dirección habitual - Trabajo
+                    <input value={workAddress} onChange={(e) => setWorkAddress(e.target.value)} placeholder="Ej: Av. Roca 456" />
+                  </label>
+                </>
+              ) : null}
 
               {role === 'conductor' ? (
                 <>
                   <label>
-                    Vehículo
-                    <select
-                      value={vehicleType}
-                      onChange={(e) => setVehicleType(e.target.value)}
-                    >
+                    Tipo de vehículo
+                    <select value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
                       <option value="auto">Auto</option>
                       <option value="moto">Moto</option>
+                      <option value="confort">Confort</option>
+                      <option value="flete">Flete</option>
                     </select>
                   </label>
 
                   <label>
                     Patente
-                    <input
-                      value={licensePlate}
-                      onChange={(e) => setLicensePlate(e.target.value.toUpperCase())}
-                      placeholder="AAA123"
-                      required
-                    />
+                    <input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value)} placeholder="AAA000" />
                   </label>
 
                   <div className="auth-note">
@@ -186,11 +202,7 @@ export default function AuthPage({ cities, onAuthResolved }) {
         </form>
 
         {mode === 'login' ? (
-          <button
-            className="auth-switch"
-            onClick={handleResetPassword}
-            disabled={busy}
-          >
+          <button className="auth-switch" onClick={handleResetPassword} disabled={busy}>
             Recuperar contraseña
           </button>
         ) : null}
