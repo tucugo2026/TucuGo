@@ -1,17 +1,26 @@
 export default function DashboardCards({ stats }) {
-  const cards = [
-    { label: 'Países', value: stats.countries },
-    { label: 'Ciudades', value: stats.cities },
+  const items = [
     { label: 'Conductores', value: stats.drivers },
-    { label: 'Viajes', value: stats.trips }
+    { label: 'Viajes', value: stats.trips },
+    { label: 'Activos', value: stats.activeTrips ?? 0 },
+    { label: 'Disponibles', value: stats.availableDrivers ?? 0 }
   ];
 
   return (
-    <section className="card-grid">
-      {cards.map((card) => (
-        <article key={card.label} className="info-card">
-          <h2>{card.label}</h2>
-          <strong className="big-number">{card.value}</strong>
+    <section
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '12px',
+        marginBottom: '18px'
+      }}
+    >
+      {items.map((item) => (
+        <article key={item.label} className="info-card">
+          <div style={{ fontSize: '14px', opacity: 0.75 }}>{item.label}</div>
+          <div style={{ fontSize: '32px', fontWeight: 800, marginTop: '6px' }}>
+            {item.value}
+          </div>
         </article>
       ))}
     </section>

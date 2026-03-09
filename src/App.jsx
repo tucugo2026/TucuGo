@@ -119,12 +119,18 @@ export default function App() {
 
   const stats = useMemo(
     () => ({
-      countries: 3,
-      cities: cities.length,
       drivers: drivers.length,
-      trips: trips.length
+      trips: trips.length,
+      activeTrips: trips.filter((trip) =>
+        ['solicitado', 'reservado', 'aceptado', 'en_camino', 'llegue', 'en_viaje'].includes(
+          trip.estado || trip.status
+        )
+      ).length,
+      availableDrivers: drivers.filter((driver) =>
+        (driver.estado || driver.status || '').toLowerCase() === 'disponible'
+      ).length
     }),
-    [cities, drivers, trips]
+    [drivers, trips]
   );
 
   async function handleLogout() {
@@ -144,7 +150,7 @@ export default function App() {
       return (
         <div className="info-card">
           <h2>Cuenta de conductor pendiente</h2>
-          <p>Tu cuenta está creada, pero todavía necesita aprobación de un admin para entrar al panel de conductor.</p>
+          <p>Tu cuenta fue creada, pero todavía necesita aprobación de un admin.</p>
         </div>
       );
     }
@@ -156,6 +162,8 @@ export default function App() {
             cities={cities}
             drivers={drivers}
             refreshAll={refreshAll}
+            profile={profile}
+            trips={trips}
           />
         );
 
@@ -171,23 +179,23 @@ export default function App() {
       case 'map':
         return profile?.rol === 'admin'
           ? <AdminMapPage />
-          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} profile={profile} trips={trips} />;
 
       case 'model':
         return profile?.rol === 'admin'
           ? <DataModelPanel />
-          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} profile={profile} trips={trips} />;
 
       case 'users':
         return profile?.rol === 'admin'
           ? <UsersAdminPanel />
-          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} profile={profile} trips={trips} />;
 
       case 'admin':
       default:
         return profile?.rol === 'admin'
           ? <AdminPanel cities={cities} drivers={drivers} trips={trips} refreshAll={refreshAll} />
-          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} />;
+          : <PassengerPanel cities={cities} drivers={drivers} refreshAll={refreshAll} profile={profile} trips={trips} />;
     }
   }, [firebaseReady, authUser, activeTab, profile, cities, drivers, trips]);
 
@@ -219,25 +227,7 @@ export default function App() {
           {bootMessage}
         </div>
 
-        {authUser && profile ? (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-            <UserMenu profile={profile} onLogout={handleLogout} />
-            <button
-              onClick={handleLogout}
-              style={{
-                background: '#ef4444',
-                color: 'white',
-                border: 'none',
-                padding: '8px 14px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              Salir
-            </button>
-          </div>
-        ) : null}
+        {authUser && profile ? <UserMenu profile={profile} onLogout={handleLogout} /> : null}
 
         {authUser && profile ? (
           <div className="tabs">

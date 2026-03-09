@@ -17,10 +17,14 @@ import {
   findNearestAvailableDriver,
   haversineKm
 } from '../services/geo.js';
-import { calculatePrice, formatMoney } from '../services/pricing.js';
+import {
+  calculateDynamicPrice,
+  formatMoney
+} from '../services/pricing.js';
 import { createTrip } from '../services/tripService.js';
 import { db } from '../services/firebase.js';
 import { getUserProfile, updateUserProfile } from '../services/authService.js';
+import { getRainStatusByCoords } from '../services/weatherService.js';
 
 const SERVICE_LABELS = {
   moto: 'Moto',
@@ -29,14 +33,9 @@ const SERVICE_LABELS = {
   flete: 'TucuGo Fletes'
 };
 
-const SERVICE_MULTIPLIERS = {
-  moto: 0.85,
-  auto: 1,
-  confort: 1.25,
-  flete: 1.6
-};
+const DEMAND_RADIUS_KM = 4;
 
-export default function PassengerPanel({ cities, drivers, refreshAll, profile }) {
+export default function PassengerPanel({ cities, drivers, refreshAll, profile, trips = [] }) {
   const [selectedCity, setSelectedCity] = useState(cities[0]?.id || 'tucuman');
   const [passengerName, setPassengerName] = useState('Marcelo');
   const [passengerPhone, setPassengerPhone] = useState('+543810000000');
@@ -61,6 +60,14 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
   const [reserveMode, setReserveMode] = useState(false);
   const [reserveDate, setReserveDate] = useState('');
   const [reserveTime, setReserveTime] = useState('');
+  const [weatherInfo, setWeatherInfo] = useState({
+    isRaining: false,
+    rainMm: 0,
+    precipitationProbability: 0,
+    source: 'open-meteo',
+    message: 'Consultando clima...'
+  });
+  const [weatherLoading, setWeatherLoading] = useState(false);
 
   const previousTripStatusRef = useRef(null);
 
@@ -104,6 +111,31 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
     loadProfileData();
   }, [profile]);
+
+  useEffect(() => {
+    async function loadWeather() {
+      if (!position?.lat || !position?.lng) return;
+
+      try {
+        setWeatherLoading(true);
+        const weather = await getRainStatusByCoords(position.lat, position.lng);
+        setWeatherInfo(weather);
+      } catch (error) {
+        console.error('weather:', error);
+        setWeatherInfo({
+          isRaining: false,
+          rainMm: 0,
+          precipitationProbability: 0,
+          source: 'open-meteo',
+          message: 'No se pudo consultar el clima'
+        });
+      } finally {
+        setWeatherLoading(false);
+      }
+    }
+
+    loadWeather();
+  }, [position]);
 
   useEffect(() => {
     if (!passengerPhone) return;
@@ -165,47 +197,19 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
   function getNotificationFromStatus(status) {
     switch (status) {
       case 'aceptado':
-        return {
-          type: 'info',
-          title: 'Conductor asignado',
-          text: 'Tu conductor ya fue asignado.'
-        };
+        return { type: 'info', title: 'Conductor asignado', text: 'Tu conductor ya fue asignado.' };
       case 'en_camino':
-        return {
-          type: 'warning',
-          title: 'Conductor en camino',
-          text: 'Tu conductor está yendo hacia tu ubicación.'
-        };
+        return { type: 'warning', title: 'Conductor en camino', text: 'Tu conductor está yendo hacia tu ubicación.' };
       case 'llegue':
-        return {
-          type: 'warning',
-          title: 'Tu conductor llegó',
-          text: 'El conductor ya está en el punto de recogida.'
-        };
+        return { type: 'warning', title: 'Tu conductor llegó', text: 'El conductor ya está en el punto de recogida.' };
       case 'reservado':
-        return {
-          type: 'info',
-          title: 'Viaje reservado',
-          text: 'Tu viaje quedó reservado correctamente.'
-        };
+        return { type: 'info', title: 'Viaje reservado', text: 'Tu viaje quedó reservado correctamente.' };
       case 'en_viaje':
-        return {
-          type: 'success',
-          title: 'Viaje iniciado',
-          text: 'Tu viaje comenzó.'
-        };
+        return { type: 'success', title: 'Viaje iniciado', text: 'Tu viaje comenzó.' };
       case 'finalizado':
-        return {
-          type: 'success',
-          title: 'Viaje finalizado',
-          text: 'Tu viaje terminó correctamente.'
-        };
+        return { type: 'success', title: 'Viaje finalizado', text: 'Tu viaje terminó correctamente.' };
       case 'cancelado':
-        return {
-          type: 'danger',
-          title: 'Viaje cancelado',
-          text: 'Tu viaje fue cancelado.'
-        };
+        return { type: 'danger', title: 'Viaje cancelado', text: 'Tu viaje fue cancelado.' };
       default:
         return null;
     }
@@ -213,7 +217,6 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
   useEffect(() => {
     const currentStatus = myLatestTrip?.estado || myLatestTrip?.status || null;
-
     if (!currentStatus) return;
 
     if (previousTripStatusRef.current === null) {
@@ -246,11 +249,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
   useEffect(() => {
     if (!tripNotification) return;
-
-    const timer = setTimeout(() => {
-      setTripNotification(null);
-    }, 5000);
-
+    const timer = setTimeout(() => setTripNotification(null), 5000);
     return () => clearTimeout(timer);
   }, [tripNotification]);
 
@@ -264,29 +263,83 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
     };
   }, [position, destinationOffsetKm, destinationText]);
 
+  const activeTripsInZoneCount = useMemo(() => {
+    if (!position?.lat || !position?.lng) return 0;
+
+    return (trips || []).filter((trip) => {
+      const status = trip.estado || trip.status;
+      const isActive = ['solicitado', 'aceptado', 'en_camino', 'llegue', 'en_viaje', 'reservado'].includes(status);
+      if (!isActive) return false;
+
+      const lat = trip.originLat ?? trip.origenLat ?? null;
+      const lng = trip.originLng ?? trip.origenLng ?? null;
+
+      if (lat == null || lng == null) return false;
+
+      const distance = haversineKm(
+        { lat: position.lat, lng: position.lng },
+        { lat: Number(lat), lng: Number(lng) }
+      );
+
+      return distance <= DEMAND_RADIUS_KM;
+    }).length;
+  }, [trips, position]);
+
+  const availableDriversInZoneCount = useMemo(() => {
+    if (!position?.lat || !position?.lng) return 0;
+
+    return drivers.filter((item) => {
+      const driverStatus = (item.estado || item.status || '').toString().toLowerCase();
+      if (driverStatus !== 'disponible') return false;
+
+      const lat = item?.ubicacion?.lat;
+      const lng = item?.ubicacion?.lng;
+      if (lat == null || lng == null) return false;
+
+      const distance = haversineKm(
+        { lat: position.lat, lng: position.lng },
+        { lat: Number(lat), lng: Number(lng) }
+      );
+
+      return distance <= DEMAND_RADIUS_KM;
+    }).length;
+  }, [drivers, position]);
+
   const estimate = useMemo(() => {
     if (!city || !position || !destinationPoint) return null;
 
     const distanceKm = haversineKm(position, destinationPoint);
     const durationMin = estimateDurationMinutes(distanceKm);
-    const multiplier = SERVICE_MULTIPLIERS[serviceType] || 1;
 
-    const price = calculatePrice({
-      baseFare: city.baseFare * multiplier,
-      priceKm: city.priceKm * multiplier,
-      priceMinute: city.priceMinute * multiplier,
+    const dynamic = calculateDynamicPrice({
+      baseFare: city.baseFare,
+      priceKm: city.priceKm,
+      priceMinute: city.priceMinute,
       distanceKm,
       durationMin,
-      minimumFare: city.baseFare * multiplier
+      minimumFare: city.baseFare,
+      serviceType,
+      isRaining: weatherInfo.isRaining,
+      tripDate: new Date(),
+      activeTripsCount: activeTripsInZoneCount,
+      availableDriversCount: availableDriversInZoneCount
     });
 
     return {
       distanceKm: Number(distanceKm.toFixed(2)),
       durationMin,
-      price,
-      formatted: formatMoney(price, city.currency)
+      ...dynamic,
+      formatted: formatMoney(dynamic.price, city.currency)
     };
-  }, [city, position, destinationPoint, serviceType]);
+  }, [
+    city,
+    position,
+    destinationPoint,
+    serviceType,
+    weatherInfo.isRaining,
+    activeTripsInZoneCount,
+    availableDriversInZoneCount
+  ]);
 
   const compatibleDrivers = useMemo(() => {
     return drivers.filter((item) => {
@@ -337,10 +390,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
     return (
       drivers.find(
-        (d) =>
-          d.id === driverId ||
-          d.uid === driverId ||
-          d.driverId === driverId
+        (d) => d.id === driverId || d.uid === driverId || d.driverId === driverId
       ) || nearestDriver || null
     );
   }, [drivers, nearestDriver, myLatestTrip]);
@@ -349,50 +399,32 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
     const status = myLatestTrip?.estado || myLatestTrip?.status;
 
     switch (status) {
-      case 'solicitado':
-        return 'Esperando conductor';
-      case 'reservado':
-        return 'Tu viaje quedó reservado';
-      case 'aceptado':
-        return 'Tu conductor fue asignado';
-      case 'en_camino':
-        return 'Tu conductor está en camino';
-      case 'llegue':
-        return 'Tu conductor ya llegó al punto de recogida';
-      case 'en_viaje':
-        return 'Tu viaje está en curso';
-      case 'finalizado':
-        return 'Tu viaje finalizó';
-      case 'cancelado':
-        return 'Tu viaje fue cancelado';
-      default:
-        return 'Aún no tienes un viaje activo';
+      case 'solicitado': return 'Esperando conductor';
+      case 'reservado': return 'Tu viaje quedó reservado';
+      case 'aceptado': return 'Tu conductor fue asignado';
+      case 'en_camino': return 'Tu conductor está en camino';
+      case 'llegue': return 'Tu conductor ya llegó al punto de recogida';
+      case 'en_viaje': return 'Tu viaje está en curso';
+      case 'finalizado': return 'Tu viaje finalizó';
+      case 'cancelado': return 'Tu viaje fue cancelado';
+      default: return 'Aún no tienes un viaje activo';
     }
   }, [myLatestTrip]);
 
   const etaMessage = useMemo(() => {
     const status = myLatestTrip?.estado || myLatestTrip?.status || '';
-
     if (!assignedDriver || etaData.durationMin == null) return '—';
 
     if (status === 'aceptado' || status === 'en_camino') {
       return `Tu conductor llega en ${etaData.durationMin} min`;
     }
-
-    if (status === 'llegue') {
-      return 'Tu conductor ya está en el punto de recogida';
-    }
-
-    if (status === 'en_viaje') {
-      return 'Tu viaje está en curso';
-    }
-
+    if (status === 'llegue') return 'Tu conductor ya está en el punto de recogida';
+    if (status === 'en_viaje') return 'Tu viaje está en curso';
     return '—';
   }, [myLatestTrip, assignedDriver, etaData]);
 
   async function useCurrentLocation() {
     if (!city) return;
-
     const current = await getBrowserPosition(city.center);
     setPosition(current);
     setMessage('Ubicación actualizada desde el navegador.');
@@ -405,14 +437,8 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
     }
 
     const addresses = [];
-
-    if (homeAddress.trim()) {
-      addresses.push({ alias: 'Casa', direccion: homeAddress.trim() });
-    }
-
-    if (workAddress.trim()) {
-      addresses.push({ alias: 'Trabajo', direccion: workAddress.trim() });
-    }
+    if (homeAddress.trim()) addresses.push({ alias: 'Casa', direccion: homeAddress.trim() });
+    if (workAddress.trim()) addresses.push({ alias: 'Trabajo', direccion: workAddress.trim() });
 
     try {
       await updateUserProfile(profile.uid, {
@@ -449,11 +475,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
   }
 
   async function liberarConductorSiExiste() {
-    const driverId =
-      myLatestTrip?.conductorId ||
-      myLatestTrip?.driverId ||
-      '';
-
+    const driverId = myLatestTrip?.conductorId || myLatestTrip?.driverId || '';
     if (!driverId) return;
 
     await updateDoc(doc(db, 'conductores', driverId), {
@@ -501,7 +523,21 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
         destinationLng: destinationPoint.lng,
         estimatedDistanceKm: estimate.distanceKm,
         estimatedDurationMin: estimate.durationMin,
+        precioBase: estimate.precioBase,
+        multiplicadorServicio: estimate.multiplicadorServicio,
+        precioServicio: estimate.precioServicio,
+        recargoDomingo: estimate.recargoDomingo,
+        recargoLluvia: estimate.recargoLluvia,
+        recargoDemanda: estimate.recargoDemanda,
+        tasaDomingo: estimate.tasaDomingo,
+        tasaLluvia: estimate.tasaLluvia,
+        tasaDemanda: estimate.tasaDemanda,
+        demandRadiusKm: DEMAND_RADIUS_KM,
+        activeTripsInZoneCount,
+        availableDriversInZoneCount,
         price: estimate.price,
+        comisionApp: estimate.comisionApp,
+        gananciaConductor: estimate.gananciaConductor,
         paymentMethod,
         notes,
         serviceType,
@@ -510,30 +546,22 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
         reserveMode,
         fechaReserva: reserveMode ? reserveDate : '',
         horaReserva: reserveMode ? reserveTime : '',
+        isRaining: weatherInfo.isRaining,
+        weatherSource: weatherInfo.source,
+        rainMm: weatherInfo.rainMm || 0,
+        precipitationProbability: weatherInfo.precipitationProbability || 0,
         estado: reserveMode ? 'reservado' : autoAssignedDriver ? 'aceptado' : 'solicitado',
         status: reserveMode ? 'reservado' : autoAssignedDriver ? 'aceptado' : 'solicitado',
         conductorId:
-          autoAssignedDriver?.id ||
-          autoAssignedDriver?.uid ||
-          autoAssignedDriver?.driverId ||
-          '',
+          autoAssignedDriver?.id || autoAssignedDriver?.uid || autoAssignedDriver?.driverId || '',
         driverId:
-          autoAssignedDriver?.id ||
-          autoAssignedDriver?.uid ||
-          autoAssignedDriver?.driverId ||
-          '',
+          autoAssignedDriver?.id || autoAssignedDriver?.uid || autoAssignedDriver?.driverId || '',
         conductorNombre:
-          autoAssignedDriver?.name ||
-          autoAssignedDriver?.nombre ||
-          'Sin asignar',
+          autoAssignedDriver?.name || autoAssignedDriver?.nombre || 'Sin asignar',
         driverName:
-          autoAssignedDriver?.name ||
-          autoAssignedDriver?.nombre ||
-          'Sin asignar',
+          autoAssignedDriver?.name || autoAssignedDriver?.nombre || 'Sin asignar',
         conductorTelefono:
-          autoAssignedDriver?.phone ||
-          autoAssignedDriver?.telefono ||
-          '',
+          autoAssignedDriver?.phone || autoAssignedDriver?.telefono || '',
         vehicleTypeAssigned:
           autoAssignedDriver?.vehicleType ||
           autoAssignedDriver?.vehiculoTipo ||
@@ -542,9 +570,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
         assignedAutomatically: !!autoAssignedDriver,
         createdAt: new Date().toISOString(),
         cryptoWallet:
-          paymentMethod === 'USDC' ||
-          paymentMethod === 'USDT' ||
-          paymentMethod === 'BTC'
+          paymentMethod === 'USDC' || paymentMethod === 'USDT' || paymentMethod === 'BTC'
             ? 'wallet-demo-001'
             : '',
         cryptoTxId: ''
@@ -636,9 +662,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
   function llamarAlConductor() {
     const phone =
-      assignedDriver?.phone ||
-      assignedDriver?.telefono ||
-      myLatestTrip?.conductorTelefono;
+      assignedDriver?.phone || assignedDriver?.telefono || myLatestTrip?.conductorTelefono;
 
     if (!phone) {
       alert('El conductor no tiene teléfono registrado.');
@@ -650,9 +674,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
   function whatsappAlConductor() {
     const phone =
-      assignedDriver?.phone ||
-      assignedDriver?.telefono ||
-      myLatestTrip?.conductorTelefono;
+      assignedDriver?.phone || assignedDriver?.telefono || myLatestTrip?.conductorTelefono;
 
     if (!phone) {
       alert('El conductor no tiene teléfono registrado.');
@@ -722,9 +744,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
             Método de pago por defecto
             <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
               {SUPPORTED_PAYMENT_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
+                <option key={method} value={method}>{method}</option>
               ))}
             </select>
           </label>
@@ -766,40 +786,26 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
           <label>
             Ciudad
-            <select
-              value={selectedCity}
-              onChange={(event) => setSelectedCity(event.target.value)}
-            >
+            <select value={selectedCity} onChange={(event) => setSelectedCity(event.target.value)}>
               {cities.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
+                <option key={item.id} value={item.id}>{item.name}</option>
               ))}
             </select>
           </label>
 
           <label>
             Pasajero
-            <input
-              value={passengerName}
-              onChange={(event) => setPassengerName(event.target.value)}
-            />
+            <input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} />
           </label>
 
           <label>
             Teléfono
-            <input
-              value={passengerPhone}
-              onChange={(event) => setPassengerPhone(event.target.value)}
-            />
+            <input value={passengerPhone} onChange={(event) => setPassengerPhone(event.target.value)} />
           </label>
 
           <label>
             Tipo de servicio
-            <select
-              value={serviceType}
-              onChange={(event) => setServiceType(event.target.value)}
-            >
+            <select value={serviceType} onChange={(event) => setServiceType(event.target.value)}>
               <option value="moto">Moto</option>
               <option value="auto">Auto</option>
               <option value="confort">Confort</option>
@@ -807,20 +813,43 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
             </select>
           </label>
 
+          <div className="info-card" style={{ padding: '10px 12px' }}>
+            <b>Clima automático:</b>{' '}
+            {weatherLoading
+              ? 'Consultando...'
+              : weatherInfo.isRaining
+              ? `Lluvia detectada (${weatherInfo.rainMm || 0} mm)`
+              : 'Sin lluvia'}
+            <br />
+            <span style={{ fontSize: '13px' }}>
+              Probabilidad: {weatherInfo.precipitationProbability || 0}%
+            </span>
+            <br />
+            <span style={{ fontSize: '13px' }}>
+              Fuente: Open-Meteo
+            </span>
+          </div>
+
+          <div className="info-card" style={{ padding: '10px 12px' }}>
+            <b>Demanda por zona ({DEMAND_RADIUS_KM} km):</b>
+            <br />
+            <span style={{ fontSize: '13px' }}>
+              Viajes activos cerca: {activeTripsInZoneCount}
+            </span>
+            <br />
+            <span style={{ fontSize: '13px' }}>
+              Conductores disponibles cerca: {availableDriversInZoneCount}
+            </span>
+          </div>
+
           <label>
             Origen
-            <input
-              value={originText}
-              onChange={(event) => setOriginText(event.target.value)}
-            />
+            <input value={originText} onChange={(event) => setOriginText(event.target.value)} />
           </label>
 
           <label>
             Destino
-            <input
-              value={destinationText}
-              onChange={(event) => setDestinationText(event.target.value)}
-            />
+            <input value={destinationText} onChange={(event) => setDestinationText(event.target.value)} />
           </label>
 
           <label>
@@ -836,11 +865,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
 
           <label>
             Notas
-            <textarea
-              rows="3"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
+            <textarea rows="3" value={notes} onChange={(event) => setNotes(event.target.value)} />
           </label>
 
           <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -867,16 +892,14 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
           ) : null}
 
           <div className="button-row">
-            <button type="button" onClick={useCurrentLocation}>
-              Usar mi ubicación
-            </button>
+            <button type="button" onClick={useCurrentLocation}>Usar mi ubicación</button>
             <button type="submit" className="primary-button">
               {reserveMode ? 'Reservar viaje' : 'Crear viaje'}
             </button>
           </div>
 
           <p className="helper-text">
-            {message || 'Puedes usar OpenStreetMap sin pagar claves para el mapa base.'}
+            {message || 'Clima por Open-Meteo y demanda por zona real.'}
           </p>
         </form>
 
@@ -891,14 +914,23 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
           <div className="info-grid">
             <article className="info-card highlight">
               <h2>Precio estimado</h2>
-              <strong className="big-number">
-                {estimate ? estimate.formatted : '—'}
-              </strong>
+              <strong className="big-number">{estimate ? estimate.formatted : '—'}</strong>
               <p>
                 Servicio: {SERVICE_LABELS[serviceType]} · Distancia:{' '}
                 {estimate ? `${estimate.distanceKm} km` : '—'} · Tiempo:{' '}
                 {estimate ? `${estimate.durationMin} min` : '—'}
               </p>
+              {estimate ? (
+                <>
+                  <p><b>Precio base:</b> ${estimate.precioBase}</p>
+                  <p><b>Recargo servicio:</b> x{estimate.multiplicadorServicio}</p>
+                  <p><b>Recargo domingo:</b> ${estimate.recargoDomingo}</p>
+                  <p><b>Recargo lluvia:</b> ${estimate.recargoLluvia}</p>
+                  <p><b>Recargo demanda:</b> ${estimate.recargoDemanda}</p>
+                  <p><b>Comisión app:</b> ${estimate.comisionApp}</p>
+                  <p><b>Ganancia conductor:</b> ${estimate.gananciaConductor}</p>
+                </>
+              ) : null}
             </article>
 
             <article className="info-card">
@@ -918,9 +950,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
                 ETA:{' '}
                 {etaData.durationMin != null ? `${etaData.durationMin} min` : '—'}
               </p>
-              <p>
-                <b>{etaMessage}</b>
-              </p>
+              <p><b>{etaMessage}</b></p>
 
               <div className="botones-grid" style={{ marginTop: '12px' }}>
                 <button className="btn verde" onClick={llamarAlConductor}>
@@ -931,11 +961,7 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
                   WhatsApp conductor
                 </button>
 
-                <button
-                  className="btn gris"
-                  onClick={cancelarMiViaje}
-                  disabled={!canCancelTrip}
-                >
+                <button className="btn gris" onClick={cancelarMiViaje} disabled={!canCancelTrip}>
                   Cancelar viaje
                 </button>
               </div>
@@ -970,14 +996,22 @@ export default function PassengerPanel({ cities, drivers, refreshAll, profile })
               <p><b>Destino:</b> {trip.destinationText || '-'}</p>
               <p><b>Servicio:</b> {SERVICE_LABELS[trip.serviceType] || trip.serviceType || '-'}</p>
               <p><b>Precio:</b> ${trip.price || 0}</p>
+              <p><b>Comisión:</b> ${trip.comisionApp || 0}</p>
+              <p><b>Ganancia conductor:</b> ${trip.gananciaConductor || 0}</p>
               <p><b>Estado:</b> {trip.estado || '-'}</p>
               <p><b>Fecha:</b> {formatDate(trip.createdAt)}</p>
-              {trip.fechaReserva ? (
-                <p><b>Reserva:</b> {trip.fechaReserva} {trip.horaReserva || ''}</p>
+              {trip.fechaReserva ? <p><b>Reserva:</b> {trip.fechaReserva} {trip.horaReserva || ''}</p> : null}
+              {trip.recargoDomingo ? <p><b>Recargo domingo:</b> ${trip.recargoDomingo}</p> : null}
+              {trip.recargoLluvia ? <p><b>Recargo lluvia:</b> ${trip.recargoLluvia}</p> : null}
+              {trip.recargoDemanda ? <p><b>Recargo demanda:</b> ${trip.recargoDemanda}</p> : null}
+              {trip.activeTripsInZoneCount != null ? (
+                <p><b>Viajes activos en zona:</b> {trip.activeTripsInZoneCount}</p>
               ) : null}
-              {trip.ratingDriver ? (
-                <p><b>Tu calificación:</b> {trip.ratingDriver} ⭐</p>
+              {trip.availableDriversInZoneCount != null ? (
+                <p><b>Conductores en zona:</b> {trip.availableDriversInZoneCount}</p>
               ) : null}
+              {trip.rainMm ? <p><b>Lluvia detectada:</b> {trip.rainMm} mm</p> : null}
+              {trip.ratingDriver ? <p><b>Tu calificación:</b> {trip.ratingDriver} ⭐</p> : null}
             </div>
           ))
         )}

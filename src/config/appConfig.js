@@ -1,5 +1,5 @@
 export const APP_NAME = 'TucuGo';
-export const APP_SUBTITLE = 'Tu viaje, tu destino. App TucuGo con login real, roles y branding integrado.';
+export const APP_SUBTITLE = 'Tu viaje, tu destino.';
 export const USE_FIRESTORE = true;
 
 export const firebaseConfig = {
@@ -21,5 +21,5 @@ export const SUPPORTED_PAYMENT_METHODS = [
   'BTC'
 ];
 
-export const DEFAULT_COUNTRY = 'AR';
-export const DEFAULT_CITY = 'tucuman';
+export const DEFAULT_COUNTRY = 'GLOBAL';
+export const DEFAULT_CITY = 'global';
